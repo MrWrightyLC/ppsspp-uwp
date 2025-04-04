@@ -21,6 +21,7 @@
 #include "Core/MemMapHelpers.h"
 #include "Core/Reporting.h"
 #include "Core/HLE/HLE.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/sceDmac.h"
 #include "Core/HLE/sceKernel.h"
 #include "Core/HLE/FunctionWrappers.h"
@@ -120,5 +121,5 @@ const HLEFunction sceDmac[] = {
 };
 
 void Register_sceDmac() {
-	RegisterModule("sceDmac", ARRAY_SIZE(sceDmac), sceDmac);
+	RegisterHLEModule("sceDmac", ARRAY_SIZE(sceDmac), sceDmac);
 }

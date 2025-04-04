@@ -1115,10 +1115,13 @@ double g_lastSaveTime = -1.0;
 				case ScreenshotResult::Success:
 					// We might not know if the file write succeeded yet though.
 					callbackResult = Status::SUCCESS;
+					readbackImage = true;
+					break;
+				case ScreenshotResult::FailedToWriteFile:
+					// Can't reach here when we pass in a callback to TakeGameScreenshot.
+					callbackResult = Status::SUCCESS;
 					break;
 				}
-
-				readbackImage = true;
 				break;
 			}
 			default:
@@ -1144,15 +1147,10 @@ double g_lastSaveTime = -1.0;
 	}
 
 	void Cleanup() {
+		// TODO: Handle this better.
 		if (needsRestart) {
-			PSP_Shutdown();
-			std::string resetError;
-			if (!PSP_Init(PSP_CoreParameter(), &resetError)) {
-				ERROR_LOG(Log::Boot, "Error resetting: %s", resetError.c_str());
-				// TODO: This probably doesn't clean up well enough.
-				Core_Stop();
-				return;
-			}
+			std::string error_string;
+			PSP_Reboot(&error_string);
 			System_Notify(SystemNotification::BOOT_DONE);
 			System_Notify(SystemNotification::DISASSEMBLY);
 			needsRestart = false;

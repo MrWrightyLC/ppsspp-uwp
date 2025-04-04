@@ -29,6 +29,7 @@
 #include "Common/Serialize/SerializeFuncs.h"
 #include "Common/TimeUtil.h"
 #include "Core/HLE/HLE.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/MIPS/MIPS.h"
 #include "Core/Reporting.h"
@@ -1014,5 +1015,5 @@ const HLEFunction sceRtc[] =
 
 void Register_sceRtc()
 {
-	RegisterModule("sceRtc", ARRAY_SIZE(sceRtc), sceRtc);
+	RegisterHLEModule("sceRtc", ARRAY_SIZE(sceRtc), sceRtc);
 }

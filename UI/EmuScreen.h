@@ -100,10 +100,7 @@ private:
 	bool bootPending_ = true;
 	Path gamePath_;
 
-	// Something invalid was loaded, don't try to emulate
-	bool invalid_ = true;
 	bool quit_ = false;
-	bool stopRender_ = false;
 	std::string errorMessage_;
 
 	// If set, pauses at the end of the frame.
@@ -154,6 +151,8 @@ private:
 	bool lastImguiEnabled_ = false;
 
 	std::vector<VirtKey> queuedVirtKeys_;
+
+	ImGuiContext *ctx_ = nullptr;
 };
 
 bool MustRunBehind();

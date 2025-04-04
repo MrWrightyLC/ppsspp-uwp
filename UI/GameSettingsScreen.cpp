@@ -250,29 +250,37 @@ void GameSettingsScreen::CreateTabs() {
 	using namespace UI;
 	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
 
-	LinearLayout *graphicsSettings = AddTab("GameSettingsGraphics", ms->T("Graphics"));
-	CreateGraphicsSettings(graphicsSettings);
+	AddTab("GameSettingsGraphics", ms->T("Graphics"), [this](UI::LinearLayout *parent) {
+		CreateGraphicsSettings(parent);
+	});
 
-	LinearLayout *controlsSettings = AddTab("GameSettingsControls", ms->T("Controls"));
-	CreateControlsSettings(controlsSettings);
+	AddTab("GameSettingsControls", ms->T("Controls"), [this](UI::LinearLayout *parent) {
+		CreateControlsSettings(parent);
+	});
 
-	LinearLayout *audioSettings = AddTab("GameSettingsAudio", ms->T("Audio"));
-	CreateAudioSettings(audioSettings);
+	AddTab("GameSettingsAudio", ms->T("Audio"), [this](UI::LinearLayout *parent) {
+		CreateAudioSettings(parent);
+	});
 
-	LinearLayout *networkingSettings = AddTab("GameSettingsNetworking", ms->T("Networking"));
-	CreateNetworkingSettings(networkingSettings);
+	AddTab("GameSettingsNetworking", ms->T("Networking"), [this](UI::LinearLayout *parent) {
+		CreateNetworkingSettings(parent);
+	});
 
-	LinearLayout *tools = AddTab("GameSettingsTools", ms->T("Tools"));
-	CreateToolsSettings(tools);
+	AddTab("GameSettingsTools", ms->T("Tools"), [this](UI::LinearLayout *parent) {
+		CreateToolsSettings(parent);
+	});
 
-	LinearLayout *systemSettings = AddTab("GameSettingsSystem", ms->T("System"));
-	systemSettings->SetSpacing(0);
-	CreateSystemSettings(systemSettings);
+	AddTab("GameSettingsSystem", ms->T("System"), [this](UI::LinearLayout *parent) {
+		parent->SetSpacing(0);
+		CreateSystemSettings(parent);
+	});
+	
 
 	int deviceType = System_GetPropertyInt(SYSPROP_DEVICE_TYPE);
 	if ((deviceType == DEVICE_TYPE_VR) || g_Config.bForceVR) {
-		LinearLayout *vrSettings = AddTab("GameSettingsVR", ms->T("VR"));
-		CreateVRSettings(vrSettings);
+		AddTab("GameSettingsVR", ms->T("VR"), [this](UI::LinearLayout *parent) {
+			CreateVRSettings(parent);
+		});
 	}
 }
 
@@ -1156,7 +1164,7 @@ void GameSettingsScreen::CreateSystemSettings(UI::ViewGroup *systemSettings) {
 
 	systemSettings->Add(new PopupMultiChoice(&g_Config.iNotificationPos, sy->T("Notification screen position"), positions, -1, ARRAY_SIZE(positions), I18NCat::DIALOG, screenManager()));
 
-	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background" };
+	static const char *backgroundAnimations[] = { "No animation", "Floating symbols", "Recent games", "Waves", "Moving background", "Bouncing icon" };
 	systemSettings->Add(new PopupMultiChoice(&g_Config.iBackgroundAnimation, sy->T("UI background animation"), backgroundAnimations, 0, ARRAY_SIZE(backgroundAnimations), I18NCat::SYSTEM, screenManager()));
 
 	PopupMultiChoiceDynamic *theme = systemSettings->Add(new PopupMultiChoiceDynamic(&g_Config.sThemeName, sy->T("Theme"), GetThemeInfoNames(), I18NCat::THEMES, screenManager()));
@@ -1333,7 +1341,10 @@ void GameSettingsScreen::CreateSystemSettings(UI::ViewGroup *systemSettings) {
 	if (System_GetPropertyBool(SYSPROP_HAS_KEYBOARD))
 		systemSettings->Add(new CheckBox(&g_Config.bBypassOSKWithKeyboard, sy->T("Use system native keyboard")));
 
-	systemSettings->Add(new CheckBox(&g_Config.bCacheFullIsoInRam, sy->T("Cache ISO in RAM", "Cache full ISO in RAM")))->SetEnabled(!PSP_IsInited());
+	if (System_GetPropertyBool(SYSPROP_ENOUGH_RAM_FOR_FULL_ISO)) {
+		systemSettings->Add(new CheckBox(&g_Config.bCacheFullIsoInRam, sy->T("Cache ISO in RAM", "Cache full ISO in RAM")))->SetEnabled(!PSP_IsInited());
+	}
+
 	systemSettings->Add(new CheckBox(&g_Config.bCheckForNewVersion, sy->T("VersionCheck", "Check for new versions of PPSSPP")));
 	systemSettings->Add(new CheckBox(&g_Config.bScreenshotsAsPNG, sy->T("Screenshots as PNG")));
 	static const char *screenshotModeChoices[] = { "Final processed image", "Raw game image" };
@@ -1492,7 +1503,7 @@ UI::EventReturn GameSettingsScreen::OnMemoryStickOther(UI::EventParams &e) {
 	if (otherinstalled_) {
 		auto di = GetI18NCategory(I18NCat::DIALOG);
 		std::string initialPath = g_Config.memStickDirectory.ToCString();
-		std::string folder = W32Util::BrowseForFolder(MainWindow::GetHWND(), di->T("Choose PPSSPP save folder"), initialPath);
+		std::string folder = W32Util::BrowseForFolder2(MainWindow::GetHWND(), di->T("Choose PPSSPP save folder"), initialPath);
 		if (folder.size()) {
 			g_Config.memStickDirectory = Path(folder);
 			FILE *f = File::OpenCFile(PPSSPPpath / "installed.txt", "wb");
@@ -1902,7 +1913,7 @@ void DeveloperToolsScreen::CreateViews() {
 	cpuTests->SetEnabled(TestsAvailable());
 #endif
 
-	list->Add(new CheckBox(&g_Config.bUseExperimentalAtrac, dev->T("Use experimental sceAtrac")));
+	list->Add(new CheckBox(&g_Config.bUseOldAtrac, dev->T("Use the old sceAtrac implementation")));
 
 	AddOverlayList(list, screenManager());
 
@@ -1983,6 +1994,21 @@ void DeveloperToolsScreen::CreateViews() {
 	list->Add(new BitCheckBox(&g_Config.iDumpFileTypes, (int)DumpFileType::EBOOT, dev->T("Dump Decrypted Eboot", "Dump Decrypted EBOOT.BIN (If Encrypted) When Booting Game")));
 	list->Add(new BitCheckBox(&g_Config.iDumpFileTypes, (int)DumpFileType::PRX, dev->T("PRX")));
 	list->Add(new BitCheckBox(&g_Config.iDumpFileTypes, (int)DumpFileType::Atrac3, dev->T("Atrac3/3+")));
+
+	list->Add(new ItemHeader("Disable HLE (experimental! Not expected to work yet)"));
+
+	for (int i = 0; i < (int)DisableHLEFlags::Count; i++) {
+		DisableHLEFlags flag = (DisableHLEFlags)(1 << i);
+
+		// Show a checkbox, unless the setting has graduated to always on.
+		if (!(flag & AlwaysDisableHLEFlags())) {
+			const HLEModuleMeta *meta = GetHLEModuleMetaByFlag(flag);
+			if (meta) {
+				BitCheckBox *checkBox = list->Add(new BitCheckBox(&g_Config.iDisableHLE, (int)flag, meta->modname));
+				checkBox->SetEnabled(!PSP_IsInited());
+			}
+		}
+	}
 
 #if !PPSSPP_PLATFORM(ANDROID) && !PPSSPP_PLATFORM(IOS) && !PPSSPP_PLATFORM(SWITCH)
 	list->Add(new ItemHeader(dev->T("MIPSTracer")));
@@ -2538,7 +2564,7 @@ void GestureMappingScreen::CreateViews() {
 
 	root_ = new AnchorLayout(new LayoutParams(FILL_PARENT, FILL_PARENT));
 	AddStandardBack(root_);
-	TabHolder *tabHolder = new TabHolder(ORIENT_VERTICAL, 200, new AnchorLayoutParams(10, 0, 10, 0, false));
+	TabHolder *tabHolder = new TabHolder(ORIENT_VERTICAL, 200, nullptr, new AnchorLayoutParams(10, 0, 10, 0, false));
 	root_->Add(tabHolder);
 	ScrollView *rightPanel = new ScrollView(ORIENT_VERTICAL);
 	tabHolder->AddTab(co->T("Gesture"), rightPanel);

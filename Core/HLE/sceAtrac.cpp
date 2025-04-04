@@ -20,6 +20,7 @@
 #include "Common/Serialize/Serializer.h"
 #include "Common/Serialize/SerializeFuncs.h"
 #include "Core/HLE/HLE.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/MIPS/MIPS.h"
 #include "Core/CoreTiming.h"
@@ -216,7 +217,7 @@ static AtracBase *getAtrac(int atracID) {
 static int AllocAndRegisterAtrac(int codecType) {
 	for (int i = 0; i < g_atracMaxContexts; ++i) {
 		if (atracContextTypes[i] == codecType && atracContexts[i] == 0) {
-			if (g_Config.bUseExperimentalAtrac && g_atracBSS != 0) {
+			if (!g_Config.bUseOldAtrac && g_atracBSS != 0) {
 				atracContexts[i] = new Atrac2(GetAtracContextAddress(i), codecType);
 			} else {
 				atracContexts[i] = new Atrac(i, codecType);
@@ -636,7 +637,7 @@ static u32 sceAtracSetHalfwayBuffer(int atracID, u32 buffer, u32 readSize, u32 b
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), readSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), readSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -672,7 +673,7 @@ static u32 sceAtracSetData(int atracID, u32 buffer, u32 bufferSize) {
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), bufferSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), bufferSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -700,7 +701,9 @@ static int sceAtracSetDataAndGetID(u32 buffer, int bufferSize) {
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), bufferSize, &track, &error);
+	// We let zero-pointer through as zeroes, so the small size check can kick in before it's accessed.
+	// This is needed in Tomb Raider Legend (#20145).
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), bufferSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -726,7 +729,7 @@ static int sceAtracSetHalfwayBufferAndGetID(u32 buffer, u32 readSize, u32 buffer
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), readSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), readSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -846,7 +849,7 @@ static int sceAtracSetMOutHalfwayBuffer(int atracID, u32 buffer, u32 readSize, u
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), readSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), readSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -871,7 +874,7 @@ static u32 sceAtracSetMOutData(int atracID, u32 buffer, u32 bufferSize) {
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), bufferSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), bufferSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -890,7 +893,7 @@ static u32 sceAtracSetMOutData(int atracID, u32 buffer, u32 bufferSize) {
 static int sceAtracSetMOutDataAndGetID(u32 buffer, u32 bufferSize) {
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), bufferSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), bufferSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -919,7 +922,7 @@ static int sceAtracSetMOutHalfwayBufferAndGetID(u32 buffer, u32 readSize, u32 bu
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), readSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), readSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -944,7 +947,7 @@ static int sceAtracSetMOutHalfwayBufferAndGetID(u32 buffer, u32 readSize, u32 bu
 static int sceAtracSetAA3DataAndGetID(u32 buffer, u32 bufferSize, u32 fileSize, u32 metadataSizeAddr) {
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), bufferSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), bufferSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -970,7 +973,7 @@ static int sceAtracSetAA3HalfwayBufferAndGetID(u32 buffer, u32 readSize, u32 buf
 
 	Track track;
 	std::string error;
-	int ret = AnalyzeAtracTrack(Memory::GetPointer(buffer), readSize, &track, &error);
+	int ret = AnalyzeAtracTrack(Memory::GetPointerOrNull(buffer), readSize, &track, &error);
 	if (ret < 0) {
 		return hleLogError(Log::ME, ret, "%s", error.c_str());
 	}
@@ -1093,13 +1096,14 @@ static int sceAtracLowLevelDecode(int atracID, u32 sourceAddr, u32 sourceBytesCo
 
 
 // This is __sceSasConcatenateATRAC3.
-// The context's fileOff is incremented by the caller, but we need to bump the other pointers.
+// The context's fileOff is incremented by the caller. No other pointers are bumped, except
+// internally in sceSas on the real hardware.
 u32 AtracSasAddStreamData(int atracID, u32 bufPtr, u32 bytesToAdd) {
 	AtracBase *atrac = getAtrac(atracID);
 	if (!atrac) {
 		WARN_LOG(Log::ME, "bad atrac ID");
 	}
-	return atrac->AddStreamDataSas(bufPtr, bytesToAdd);
+	return atrac->EnqueueForSas(bufPtr, bytesToAdd);
 }
 
 void AtracSasDecodeData(int atracID, u8* outbuf, int *SamplesNum, int *finish) {
@@ -1107,16 +1111,20 @@ void AtracSasDecodeData(int atracID, u8* outbuf, int *SamplesNum, int *finish) {
 	if (!atrac) {
 		WARN_LOG(Log::ME, "bad atrac ID");
 	}
+	// NOTE: If streaming, this will write 0xFFFFFFFF to secondBuffer in the context when close to running
+	// out of data. It'll then expect __sceSasConcatenateATRAC3 to concatenate a new buffer, which cannot
+	// be at the same address as the old one. I think you need to double buffer, and we in fact continouously
+	// read out of these.
 	atrac->DecodeForSas((s16 *)outbuf, SamplesNum, finish);
 }
 
-// Ugly hack, but needed to support both old and new contexts.
 int AtracSasBindContextAndGetID(u32 contextAddr) {
+	// Ugly hack, but needed to support both old and new contexts.
 	int atracID = (int)Memory::Read_U32(contextAddr + 0xfc);
 	if (atracID < PSP_MAX_ATRAC_IDS && atracContexts[atracID] && atracContexts[atracID]->GetContextVersion() == 1) {
 		// We can assume the old atracID hack was used, and atracID is valid.
 	} else {
-		// Let's just loop around the contexts and find it.
+		// Let's just loop around the contexts and find it by address.
 		atracID = -1;
 		for (int i = 0; i < PSP_MAX_ATRAC_IDS; i++) {
 			if (!atracContexts[i]) {
@@ -1130,9 +1138,8 @@ int AtracSasBindContextAndGetID(u32 contextAddr) {
 		_dbg_assert_(atracID != -1);
 	}
 
-	// Not actually a hack, this happens.
 	AtracBase *atrac = getAtrac(atracID);
-	atrac->SetOutputChannels(1);
+	atrac->CheckForSas();
 	return atracID;
 }
 
@@ -1193,6 +1200,6 @@ const HLEFunction sceAtrac3plus[] = {
 
 void Register_sceAtrac3plus() {
 	// Two names
-	RegisterModule("sceATRAC3plus_Library", ARRAY_SIZE(sceAtrac3plus), sceAtrac3plus);
-	RegisterModule("sceAtrac3plus", ARRAY_SIZE(sceAtrac3plus), sceAtrac3plus);
+	RegisterHLEModule("sceATRAC3plus_Library", ARRAY_SIZE(sceAtrac3plus), sceAtrac3plus);
+	RegisterHLEModule("sceAtrac3plus", ARRAY_SIZE(sceAtrac3plus), sceAtrac3plus);
 }

@@ -21,6 +21,7 @@
 #include "Core/MIPS/MIPS.h"
 #include "Core/CoreTiming.h"
 #include "Core/HLE/HLE.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/HLE/sceKernelThread.h"
 #include "Core/HLE/sceAudio.h"
@@ -548,5 +549,5 @@ const HLEFunction sceAudio[] =
 
 void Register_sceAudio()
 {
-	RegisterModule("sceAudio", ARRAY_SIZE(sceAudio), sceAudio);
+	RegisterHLEModule("sceAudio", ARRAY_SIZE(sceAudio), sceAudio);
 }

@@ -41,6 +41,7 @@
 #include "Core/MemMapHelpers.h"
 
 #include "Core/HLE/HLEHelperThread.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/HLE/sceKernelThread.h"
 #include "Core/HLE/sceKernel.h"
@@ -52,6 +53,10 @@
 #include "Core/HLE/proAdhocServer.h"
 #include "Core/HLE/KernelWaitHelpers.h"
 
+#ifdef _WIN32
+#undef errno
+#define errno WSAGetLastError()
+#endif
 
 // shared in sceNetAdhoc.h since it need to be used from sceNet.cpp also
 // TODO: Make accessor functions instead, and throw all this state in a struct.
@@ -5230,13 +5235,13 @@ const HLEFunction sceNetAdhocDiscover[] = {
 };
 
 void Register_sceNetAdhoc() {
-	RegisterModule("sceNetAdhoc", ARRAY_SIZE(sceNetAdhoc), sceNetAdhoc);
+	RegisterHLEModule("sceNetAdhoc", ARRAY_SIZE(sceNetAdhoc), sceNetAdhoc);
 }
 
 void Register_sceNetAdhocDiscover() {
-	RegisterModule("sceNetAdhocDiscover", ARRAY_SIZE(sceNetAdhocDiscover), sceNetAdhocDiscover);
+	RegisterHLEModule("sceNetAdhocDiscover", ARRAY_SIZE(sceNetAdhocDiscover), sceNetAdhocDiscover);
 }
 
 void Register_sceNetAdhocctl() {
-	RegisterModule("sceNetAdhocctl", ARRAY_SIZE(sceNetAdhocctl), sceNetAdhocctl);
+	RegisterHLEModule("sceNetAdhocctl", ARRAY_SIZE(sceNetAdhocctl), sceNetAdhocctl);
 }

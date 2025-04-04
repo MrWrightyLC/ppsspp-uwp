@@ -31,6 +31,7 @@
 #include "Common/Serialize/SerializeMap.h"
 #include "Common/Data/Format/JSONReader.h"
 #include "Core/HLE/HLE.h"
+#include "Core/HLE/ErrorCodes.h"
 #include "Core/HLE/FunctionWrappers.h"
 #include "Core/HLE/sceKernelMemory.h"
 #include "Core/MIPS/MIPS.h"
@@ -1719,21 +1720,21 @@ const HLEFunction sceNetIfhandle[] = {
 };
 
 void Register_sceNet() {
-	RegisterModule("sceNet", ARRAY_SIZE(sceNet), sceNet);
+	RegisterHLEModule("sceNet", ARRAY_SIZE(sceNet), sceNet);
 }
 
 void Register_sceNetApctl() {
-	RegisterModule("sceNetApctl", ARRAY_SIZE(sceNetApctl), sceNetApctl);
+	RegisterHLEModule("sceNetApctl", ARRAY_SIZE(sceNetApctl), sceNetApctl);
 }
 
 void Register_sceWlanDrv() {
-	RegisterModule("sceWlanDrv", ARRAY_SIZE(sceWlanDrv), sceWlanDrv);
+	RegisterHLEModule("sceWlanDrv", ARRAY_SIZE(sceWlanDrv), sceWlanDrv);
 }
 
 void Register_sceNetUpnp() {
-	RegisterModule("sceNetUpnp", ARRAY_SIZE(sceNetUpnp), sceNetUpnp);
+	RegisterHLEModule("sceNetUpnp", ARRAY_SIZE(sceNetUpnp), sceNetUpnp);
 }
 
 void Register_sceNetIfhandle() {
-	RegisterModule("sceNetIfhandle", ARRAY_SIZE(sceNetIfhandle), sceNetIfhandle);
+	RegisterHLEModule("sceNetIfhandle", ARRAY_SIZE(sceNetIfhandle), sceNetIfhandle);
 }
