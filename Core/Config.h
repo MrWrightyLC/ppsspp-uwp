@@ -262,6 +262,8 @@ public:
 	bool bUberShaderFragment;
 	int iDefaultTab;
 	int iScreenshotMode;
+	bool bVulkanDisableImplicitLayers;
+	bool bForceFfmpegForAudioDec;
 
 	std::vector<std::string> vPostShaderNames; // Off for chain end (only Off for no shader)
 	std::map<std::string, float> mPostShaderSetting;

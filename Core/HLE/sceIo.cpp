@@ -582,10 +582,12 @@ static void __IoAsyncEndCallback(SceUID threadID, SceUID prevCallbackId) {
 
 static void __IoManagerThread() {
 	SetCurrentThreadName("IO");
+	INFO_LOG(Log::sceIo, "Entering __IoManagerThread");
 	AndroidJNIThreadContext jniContext;
-	while (ioManagerThreadEnabled && coreState != CORE_BOOT_ERROR && coreState != CORE_RUNTIME_ERROR && coreState != CORE_POWERDOWN) {
+	while (ioManagerThreadEnabled) {
 		ioManager.RunEventsUntil(CoreTiming::GetTicks() + msToCycles(1000));
 	}
+	INFO_LOG(Log::sceIo, "Leaving __IoManagerThread");
 }
 
 static void __IoWakeManager(CoreLifecycle stage) {
@@ -968,7 +970,7 @@ static u32 sceIoGetstat(const char *filename, u32 addr) {
 			return hleDelayResult(hleLogError(Log::sceIo, -1, "bad address"), "io getstat", usec);
 		}
 	} else {
-		return hleDelayResult(hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND, "FILE NOT FOUND"), "io getstat", usec);
+		return hleDelayResult(hleLogWarning(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND, "FILE NOT FOUND"), "io getstat", usec);
 	}
 }
 
@@ -2407,7 +2409,7 @@ static u32 sceIoDopen(const char *path) {
 	auto listing = pspFileSystem.GetDirListing(path, &listingExists);
 
 	if (!listingExists) {
-		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND);
+		return hleLogWarning(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND);
 	}
 
 	DirListing *dir = new DirListing();
