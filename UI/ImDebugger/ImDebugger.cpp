@@ -44,6 +44,7 @@
 #include "Core/HLE/AtracCtx.h"
 #include "Core/HLE/sceSas.h"
 #include "Core/HW/SasAudio.h"
+#include "Core/HW/Display.h"
 
 #include "Core/CoreTiming.h"
 // Threads window
@@ -148,6 +149,33 @@ void ImClickableValueFloat(const char *id, float value) {
 	}
 	ImGui::PopStyleColor();
 	ImGui::PopID();
+}
+
+void DrawTimeView(ImConfig &cfg) {
+	ImGui::SetNextWindowSize(ImVec2(420, 300), ImGuiCond_FirstUseEver);
+	if (!ImGui::Begin("Time", &cfg.timeOpen)) {
+		ImGui::End();
+		return;
+	}
+
+	// Display timing
+	if (ImGui::CollapsingHeader("Display Timing", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::Text("Num VBlanks: %d", __DisplayGetNumVblanks());
+		ImGui::Text("FlipCount: %d", __DisplayGetFlipCount());
+		ImGui::Text("VCount: %d", __DisplayGetVCount());
+		ImGui::Text("HCount cur: %d accum: %d", __DisplayGetCurrentHcount(), __DisplayGetAccumulatedHcount());
+		ImGui::Text("IsVblank: %d", DisplayIsVblank());
+	}
+
+	// RTC
+	if (ImGui::CollapsingHeader("RTC", ImGuiTreeNodeFlags_DefaultOpen)) {
+		PSPTimeval tv;
+		__RtcTimeOfDay(&tv);
+		ImGui::Text("RtcTimeOfDay: %d.%06d", tv.tv_sec, tv.tv_usec);
+		ImGui::Text("RtcGetCurrentTick: %lld", (long long)__RtcGetCurrentTick());
+	}
+
+	ImGui::End();
 }
 
 void DrawSchedulerView(ImConfig &cfg) {
@@ -791,12 +819,13 @@ static void DrawSockets(ImConfig &cfg) {
 }
 
 static const char *MemCheckConditionToString(MemCheckCondition cond) {
-	switch (cond) {
-	case MEMCHECK_READ: return "Read";
-	case MEMCHECK_WRITE: return "Write";
-	case MEMCHECK_READWRITE: return "Read/Write";
-	case MEMCHECK_WRITE | MEMCHECK_WRITE_ONCHANGE: return "Write Change";
-	case MEMCHECK_READWRITE | MEMCHECK_WRITE_ONCHANGE: return "Read/Write Change";
+	// (int) casting to avoid "case not in enum" warnings
+	switch ((int)cond) {
+	case (int)MEMCHECK_READ: return "Read";
+	case (int)MEMCHECK_WRITE: return "Write";
+	case (int)MEMCHECK_READWRITE: return "Read/Write";
+	case (int)(MEMCHECK_WRITE | MEMCHECK_WRITE_ONCHANGE): return "Write Change";
+	case (int)(MEMCHECK_READWRITE | MEMCHECK_WRITE_ONCHANGE): return "Read/Write Change";
 	default:
 		return "(bad!)";
 	}
@@ -936,6 +965,21 @@ static void DrawBreakpointsView(MIPSDebugInterface *mipsDebug, ImConfig &cfg) {
 			if (ImGui::BeginChild("mc_edit")) {
 				auto &mc = mcs[cfg.selectedMemCheck];
 				ImGui::TextUnformatted("Edit memcheck");
+				if (ImGui::BeginCombo("Condition", MemCheckConditionToString(mc.cond))) {
+					if (ImGui::Selectable("Read", mc.cond == MemCheckCondition::MEMCHECK_READ)) {
+						mc.cond = MemCheckCondition::MEMCHECK_READ;
+					}
+					if (ImGui::Selectable("Write", mc.cond == MemCheckCondition::MEMCHECK_WRITE)) {
+						mc.cond = MemCheckCondition::MEMCHECK_WRITE;
+					}
+					if (ImGui::Selectable("Read / Write", mc.cond == MemCheckCondition::MEMCHECK_READWRITE)) {
+						mc.cond = MemCheckCondition::MEMCHECK_READWRITE;
+					}
+					if (ImGui::Selectable("Write On Change", mc.cond == MemCheckCondition::MEMCHECK_WRITE_ONCHANGE)) {
+						mc.cond = MemCheckCondition::MEMCHECK_WRITE_ONCHANGE;
+					}
+					ImGui::EndCombo();
+				}
 				ImGui::CheckboxFlags("Enabled", (int *)&mc.result, (int)BREAK_ACTION_PAUSE);
 				ImGui::InputScalar("Start", ImGuiDataType_U32, &mc.start, NULL, NULL, "%08x", ImGuiInputTextFlags_CharsHexadecimal);
 				ImGui::InputScalar("End", ImGuiDataType_U32, &mc.end, NULL, NULL, "%08x", ImGuiInputTextFlags_CharsHexadecimal);
@@ -957,14 +1001,14 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 		return;
 	}
 
-	if (ImGui::CollapsingHeader("sceMpeg")) {
-		const std::map<u32, MpegContext *> &ctxs = __MpegGetContexts();
+	const std::map<u32, MpegContext *> &mpegCtxs = __MpegGetContexts();
+	if (ImGui::CollapsingHeaderWithCount("sceMpeg", (int)mpegCtxs.size())) {
 		if (ImGui::BeginTable("mpegs", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
 			ImGui::TableSetupColumn("Addr", ImGuiTableColumnFlags_WidthFixed);
 			ImGui::TableSetupColumn("VFrames", ImGuiTableColumnFlags_WidthFixed);
 
 			ImGui::TableHeadersRow();
-			for (auto iter : ctxs) {
+			for (auto iter : mpegCtxs) {
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
 				ImGui::PushID(iter.first);
@@ -987,10 +1031,10 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 			ImGui::EndTable();
 		}
 
-		auto iter = ctxs.find(cfg.selectedMpegCtx);
-		if (iter != ctxs.end()) {
+		auto iter = mpegCtxs.find(cfg.selectedMpegCtx);
+		if (iter != mpegCtxs.end()) {
 			const MpegContext *ctx = iter->second;
-			char temp[16];
+			char temp[28];
 			snprintf(temp, sizeof(temp), "sceMpeg context at %08x", iter->first);
 			if (ctx && ImGui::CollapsingHeader(temp, ImGuiTreeNodeFlags_DefaultOpen)) {
 				// ImGui::ProgressBar((float)sas->CurPos() / (float)info.fileDataEnd, ImVec2(200.0f, 0.0f));
@@ -1003,7 +1047,17 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 		}
 	}
 
-	if (ImGui::CollapsingHeader("sceAtrac", ImGuiTreeNodeFlags_DefaultOpen)) {
+	// Count the active atrac contexts so we can display it.
+	const int maxAtracContexts = __AtracMaxContexts();
+	int atracCount = 0;
+	for (int i = 0; i < maxAtracContexts; i++) {
+		u32 type;
+		if (__AtracGetCtx(i, &type)) {
+			atracCount++;
+		}
+	}
+
+	if (ImGui::CollapsingHeaderWithCount("sceAtrac", atracCount, ImGuiTreeNodeFlags_DefaultOpen)) {
 		ImGui::Checkbox("Force FFMPEG", &g_Config.bForceFfmpegForAudioDec);
 		if (ImGui::BeginTable("atracs", 8, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
 			ImGui::TableSetupColumn("Index", ImGuiTableColumnFlags_WidthFixed);
@@ -1016,8 +1070,7 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 			ImGui::TableSetupColumn("Impl", ImGuiTableColumnFlags_WidthFixed);
 
 			ImGui::TableHeadersRow();
-			const int maxContexts = __AtracMaxContexts();
-			for (int i = 0; i < maxContexts; i++) {
+			for (int i = 0; i < maxAtracContexts; i++) {
 				u32 codecType = 0;
 
 				ImGui::TableNextRow();
@@ -1164,7 +1217,48 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 		}
 	}
 
-	if (ImGui::CollapsingHeader("sceAudiocodec", ImGuiTreeNodeFlags_DefaultOpen)) {
+	if (ImGui::CollapsingHeaderWithCount("sceMp3", (int)mp3Map.size(), ImGuiTreeNodeFlags_DefaultOpen)) {
+		if (ImGui::BeginTable("mp3", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
+			ImGui::TableSetupColumn("Handle", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableSetupColumn("Channels", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableSetupColumn("ReadPos", ImGuiTableColumnFlags_WidthFixed);
+
+			for (auto &iter : mp3Map) {
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::PushID(iter.first);
+				ImGui::SetNextItemAllowOverlap();
+				char temp[16];
+				snprintf(temp, sizeof(temp), "%d", iter.first);
+				if (ImGui::Selectable(temp, iter.first == cfg.selectedMp3Ctx, ImGuiSelectableFlags_SpanAllColumns)) {
+					cfg.selectedMp3Ctx = iter.first;
+				}
+				if (!iter.second) {
+					continue;
+				}
+				ImGui::TableNextColumn();
+				ImGui::Text("%d", iter.second->Channels);
+				ImGui::TableNextColumn();
+				ImGui::Text("%d", (int)iter.second->ReadPos());
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+		}
+
+		auto iter = mp3Map.find(cfg.selectedMp3Ctx);
+		if (iter != mp3Map.end() && ImGui::CollapsingHeader("MP3 %d", iter->first)) {
+			ImGui::Text("MP3 Context %d", iter->first);
+			if (iter->second) {
+				AuCtx *ctx = iter->second;
+				ImGui::Text("%d Hz, %d channels", ctx->SamplingRate, ctx->Channels);
+				ImGui::Text("AUBuf: %08x AUSize: %08x", ctx->AuBuf, ctx->AuBufSize);
+				ImGui::Text("PCMBuf: %08x PCMSize: %08x", ctx->PCMBuf, ctx->PCMBufSize);
+				ImGui::Text("Pos: %d (%d -> %d)", ctx->ReadPos(), (int)ctx->startPos, (int)ctx->endPos);
+			}
+		}
+	}
+
+	if (ImGui::CollapsingHeaderWithCount("sceAudiocodec", (int)g_audioDecoderContexts.size(), ImGuiTreeNodeFlags_DefaultOpen)) {
 		if (ImGui::BeginTable("codecs", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
 			ImGui::TableSetupColumn("CtxAddr", ImGuiTableColumnFlags_WidthFixed);
 			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed);
@@ -1186,29 +1280,6 @@ void DrawMediaDecodersView(ImConfig &cfg, ImControl &control) {
 		}
 	}
 
-	if (ImGui::CollapsingHeader("sceMp3", ImGuiTreeNodeFlags_DefaultOpen)) {
-		if (ImGui::BeginTable("mp3", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
-			ImGui::TableSetupColumn("Handle", ImGuiTableColumnFlags_WidthFixed);
-			ImGui::TableSetupColumn("Channels", ImGuiTableColumnFlags_WidthFixed);
-			ImGui::TableSetupColumn("StartPos", ImGuiTableColumnFlags_WidthFixed);
-			// TODO: more..
-
-			for (auto &iter : mp3Map) {
-				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
-				ImGui::Text("%d", iter.first);
-				if (!iter.second) {
-					continue;
-				}
-				ImGui::TableNextColumn();
-				ImGui::Text("%d", iter.second->Channels);
-				ImGui::TableNextColumn();
-				ImGui::Text("%d", (int)iter.second->startPos);
-			}
-			ImGui::EndTable();
-		}
-	}
-
 	ImGui::End();
 }
 
@@ -1218,8 +1289,9 @@ void DrawAudioChannels(ImConfig &cfg, ImControl &control) {
 		return;
 	}
 
-	if (ImGui::BeginTable("audios", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
+	if (ImGui::BeginTable("audios", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersH)) {
 		ImGui::TableSetupColumn("Index", ImGuiTableColumnFlags_WidthFixed);
+		ImGui::TableSetupColumn("Mute", ImGuiTableColumnFlags_WidthFixed);
 		ImGui::TableSetupColumn("SampleAddr", ImGuiTableColumnFlags_WidthFixed);
 		ImGui::TableSetupColumn("SampleCount", ImGuiTableColumnFlags_WidthFixed);
 		ImGui::TableSetupColumn("Volume", ImGuiTableColumnFlags_WidthFixed);
@@ -1230,26 +1302,29 @@ void DrawAudioChannels(ImConfig &cfg, ImControl &control) {
 
 		// vaudio / output2 uses channel 8.
 		for (int i = 0; i < PSP_AUDIO_CHANNEL_MAX + 1; i++) {
-			if (!chans[i].reserved) {
+			if (!g_audioChans[i].reserved) {
 				continue;
 			}
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
+			ImGui::PushID(i);
 			if (i == 8) {
 				ImGui::TextUnformatted("audio2");
 			} else {
 				ImGui::Text("%d", i);
 			}
 			ImGui::TableNextColumn();
+			ImGui::Checkbox("", &g_audioChans[i].mute);
+			ImGui::TableNextColumn();
 			char id[2]{};
 			id[0] = i + 1;
-			ImClickableValue(id, chans[i].sampleAddress, control, ImCmd::SHOW_IN_MEMORY_VIEWER);
+			ImClickableValue(id, g_audioChans[i].sampleAddress, control, ImCmd::SHOW_IN_MEMORY_VIEWER);
 			ImGui::TableNextColumn();
-			ImGui::Text("%08x", chans[i].sampleCount);
+			ImGui::Text("%08x", g_audioChans[i].sampleCount);
 			ImGui::TableNextColumn();
-			ImGui::Text("%d | %d", chans[i].leftVolume, chans[i].rightVolume);
+			ImGui::Text("%d | %d", g_audioChans[i].leftVolume, g_audioChans[i].rightVolume);
 			ImGui::TableNextColumn();
-			switch (chans[i].format) {
+			switch (g_audioChans[i].format) {
 			case PSP_AUDIO_FORMAT_STEREO:
 				ImGui::TextUnformatted("Stereo");
 				break;
@@ -1261,12 +1336,13 @@ void DrawAudioChannels(ImConfig &cfg, ImControl &control) {
 				break;
 			}
 			ImGui::TableNextColumn();
-			for (auto t : chans[i].waitingThreads) {
+			for (auto t : g_audioChans[i].waitingThreads) {
 				KernelObject *thread = kernelObjects.GetFast<KernelObject>(t.threadID);
 				if (thread) {
 					ImGui::Text("%s: %d", thread->GetName(), t.numSamples);
 				}
 			}
+			ImGui::PopID();
 		}
 
 		ImGui::EndTable();
@@ -1910,6 +1986,7 @@ void ImDebugger::Frame(MIPSDebugInterface *mipsDebug, GPUDebugInterface *gpuDebu
 		}
 		if (ImGui::BeginMenu("Core")) {
 			ImGui::MenuItem("Scheduler", nullptr, &cfg_.schedulerOpen);
+			ImGui::MenuItem("Time", nullptr, &cfg_.timeOpen);
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("CPU")) {
@@ -2160,6 +2237,10 @@ void ImDebugger::Frame(MIPSDebugInterface *mipsDebug, GPUDebugInterface *gpuDebu
 		DrawSchedulerView(cfg_);
 	}
 
+	if (cfg_.timeOpen) {
+		DrawTimeView(cfg_);
+	}
+
 	if (cfg_.pixelViewerOpen) {
 		pixelViewer_.Draw(cfg_, control, gpuDebug, draw);
 	}
@@ -2327,6 +2408,7 @@ void ImConfig::SyncConfig(IniFile *ini, bool save) {
 	sync.Sync("geStateOpen", &geStateOpen, false);
 	sync.Sync("geVertsOpen", &geVertsOpen, false);
 	sync.Sync("schedulerOpen", &schedulerOpen, false);
+	sync.Sync("timeOpen", &timeOpen, false);
 	sync.Sync("socketsOpen", &socketsOpen, false);
 	sync.Sync("npOpen", &npOpen, false);
 	sync.Sync("adhocOpen", &adhocOpen, false);

@@ -114,6 +114,20 @@ void AddOverlayList(UI::ViewGroup *items, ScreenManager *screenManager) {
 	items->Add(new PopupMultiChoice((int *)&g_Config.iDebugOverlay, dev->T("Debug overlay"), g_debugOverlayList, 0, numOverlays, I18NCat::DEVELOPER, screenManager));
 }
 
+void SaveFrameDump() {
+	if (!gpuDebug) {
+		return;
+	}
+	gpuDebug->GetRecorder()->RecordNextFrame([](const Path &dumpPath) {
+		NOTICE_LOG(Log::System, "Frame dump created at '%s'", dumpPath.c_str());
+		if (System_GetPropertyBool(SYSPROP_CAN_SHOW_FILE)) {
+			System_ShowFileInFolder(dumpPath);
+		} else {
+			g_OSD.Show(OSDType::MESSAGE_SUCCESS, dumpPath.ToVisualString(), 7.0f);
+		}
+	});
+}
+
 void DevMenuScreen::CreatePopupContents(UI::ViewGroup *parent) {
 	using namespace UI;
 	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
@@ -165,14 +179,7 @@ void DevMenuScreen::CreatePopupContents(UI::ViewGroup *parent) {
 
 	if (PSP_CoreParameter().fileType != IdentifiedFileType::PPSSPP_GE_DUMP) {
 		items->Add(new Choice(dev->T("Create frame dump")))->OnClick.Add([](UI::EventParams &e) {
-			gpuDebug->GetRecorder()->RecordNextFrame([](const Path &dumpPath) {
-				NOTICE_LOG(Log::System, "Frame dump created at '%s'", dumpPath.c_str());
-				if (System_GetPropertyBool(SYSPROP_CAN_SHOW_FILE)) {
-					System_ShowFileInFolder(dumpPath);
-				} else {
-					g_OSD.Show(OSDType::MESSAGE_SUCCESS, dumpPath.ToVisualString(), 7.0f);
-				}
-			});
+			SaveFrameDump();
 			return UI::EVENT_DONE;
 		});
 	}
@@ -940,6 +947,9 @@ void SystemInfoScreen::CreateInternalsTab(UI::ViewGroup *internals) {
 	const TextDrawer *text = screenManager()->getUIContext()->Text();
 	internals->Add(new InfoItem(si->T("Texture count"), StringFromFormat("%d", text->GetStringCacheSize())));
 	internals->Add(new InfoItem(si->T("Data size"), NiceSizeFormat(text->GetCacheDataSize())));
+
+	internals->Add(new ItemHeader(si->T("Slider test")));
+	internals->Add(new Slider(&testSliderValue_, 0, 100, 1, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
 
 	internals->Add(new ItemHeader(si->T("Notification tests")));
 	internals->Add(new Choice(si->T("Error")))->OnClick.Add([&](UI::EventParams &) {

@@ -71,6 +71,7 @@ struct ImConfig {
 	bool geStateOpen;
 	bool geVertsOpen;
 	bool schedulerOpen;
+	bool timeOpen;
 	bool watchOpen;
 	bool pixelViewerOpen;
 	bool npOpen;
@@ -99,6 +100,7 @@ struct ImConfig {
 	int selectedBreakpoint = -1;
 	int selectedMemCheck = -1;
 	int selectedAtracCtx = 0;
+	int selectedMp3Ctx = 0;
 	int selectedMemoryBlock = 0;
 	u32 selectedMpegCtx = 0;
 

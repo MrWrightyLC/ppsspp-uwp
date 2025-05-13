@@ -98,6 +98,8 @@ enum class SystemRequestType {
 	MICROPHONE_COMMAND,
 
 	RUN_CALLBACK_IN_WNDPROC,
+
+	MOVE_TO_TRASH,
 };
 
 // Run a closure on the main thread. Used to safely implement UI that runs on another thread.
@@ -283,6 +285,7 @@ enum class UIMessage {
 	SAVEDATA_SEARCH,
 	RESTART_GRAPHICS,
 	RECENT_FILES_CHANGED,
+	SAVE_FRAME_DUMP,
 };
 
 std::string System_GetProperty(SystemProperty prop);
