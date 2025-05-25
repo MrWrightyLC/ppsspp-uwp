@@ -151,9 +151,11 @@ private:
 
 	ImGuiContext *ctx_ = nullptr;
 
-	// TODO: Ugly!
 	bool frameStep_ = false;
+#ifndef MOBILE_DEVICE
 	bool startDumping_ = false;
+#endif
+	bool autoLoadFailed_ = false;  // to prevent repeat reloads
 };
 
 bool MustRunBehind();
