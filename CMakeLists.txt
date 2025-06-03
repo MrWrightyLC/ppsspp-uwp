@@ -437,10 +437,6 @@ if(NOT MSVC)
 	endif()
 
 	include(CheckSymbolExists)
-	check_symbol_exists(_UCRT "windows.h" UCRT)
-	if (UCRT)
-		link_libraries("$<$<CONFIG:Debug>:ucrtbased>")
-	endif()
 
 	add_compile_definitions("$<$<CONFIG:Debug>:_DEBUG>")
 
@@ -938,7 +934,11 @@ if(IOS)
 	target_compile_definitions(Common PUBLIC GLES_SILENCE_DEPRECATION)
 endif()
 
-target_link_libraries(Common Ext::Snappy cpu_features imgui)
+target_link_libraries(Common Ext::Snappy cpu_features)
+
+if(NOT LIBRETRO)
+    target_link_libraries(Common imgui)
+endif()
 
 if(ARM64)
 	if(ANDROID)
@@ -2975,7 +2975,7 @@ if(IOS AND NOT LIBRETRO)
 		else()
 			set(BUNDLE_IDENTIFIER "org.ppsspp.ppssppgold")
 		endif()
-		set(ICON_NAME "GoldIcon")
+		set(ICON_NAME "PPSSPPGold")
 		set(DISPLAY_NAME "PPSSPP Gold")
 	else()
 		if(IOS_APP_STORE)
@@ -2994,6 +2994,8 @@ if(IOS AND NOT LIBRETRO)
 		# Should find a different way to do both these things.
 		add_custom_command(TARGET ${TargetBin} POST_BUILD
 			COMMAND echo "Creating ${APP_DIR_NAME} for app store build"
+			COMMAND echo "CURRENT_BINARY_DIR: ${CMAKE_CURRENT_BINARY_DIR}"
+			COMMAND echo "BINARY_DIR: ${CMAKE_BINARY_DIR}"
 			COMMAND mkdir -p \"${APP_DIR_NAME}\"
 				# This tar command seems to be responsible for copying assets. I thought we had another step that did that..
 				# Prepend -v to the extracting command to see the files copied.
@@ -3007,6 +3009,12 @@ if(IOS AND NOT LIBRETRO)
 			"${CMAKE_CURRENT_SOURCE_DIR}/ios/MoltenVK/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"
 		)
 		# https://stackoverflow.com/questions/40664125/cmake-and-code-signing-in-xcode-8-for-ios-projects
+		target_compile_options(${TargetBin} PRIVATE
+			$<$<CONFIG:Release>:-g -gline-tables-only>
+		)
+		target_compile_options(${TargetBin} PRIVATE
+			$<$<CONFIG:RelWithDebInfo>:-g>
+		)
 		set_target_properties(${TargetBin} PROPERTIES
 			XCODE_GENERATE_SCHEME YES  # Avoid the scheme bloat in XCode by only setting it to YES for this target.
 			RESOURCE "ios/Launch Screen.storyboard"
@@ -3031,11 +3039,15 @@ if(IOS AND NOT LIBRETRO)
 			XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${DEVELOPMENT_TEAM_ID}
 			XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
 			XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
-			# The following one was hallucinated by ChatGPT
-			XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS "YES"
+			XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS YES
+
+			XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+			XCODE_ATTRIBUTE_DEPLOYMENT_POSTPROCESSING[variant=Release] "YES"
+			XCODE_ATTRIBUTE_STRIP_INSTALLED_PRODUCT[variant=Release] "YES"
+
 			#XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS ${BUNDLE_ENTITLEMENTS}
 			XCODE_ATTRIBUTE_SKIP_INSTALL NO
-						XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+			XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
 		)
 	else()
 		# This is for injecting the version into the plist.
@@ -3045,6 +3057,7 @@ if(IOS AND NOT LIBRETRO)
 			COMMAND tar -c -C ${CMAKE_CURRENT_BINARY_DIR} --exclude .DS_Store --exclude .git assets *.png | tar -x -C \"${APP_DIR_NAME}\"
 			COMMAND /bin/bash "${CMAKE_SOURCE_DIR}/ios/macbundle.sh" \"${APP_DIR_NAME}\"
 		)
+
 		set_target_properties(${TargetBin} PROPERTIES
 			MACOSX_BUNDLE_INFO_PLIST ${BUNDLE_PLIST}
 			XCODE_GENERATE_SCHEME YES

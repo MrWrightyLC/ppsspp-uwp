@@ -546,6 +546,8 @@ bool PSP_InitStart(const CoreParameter &coreParam) {
 		return false;
 	}
 
+	IncrementDebugCounter(DebugCounter::GAME_BOOT);
+
 	g_bootState = BootState::Booting;
 
 	GraphicsContext *temp = g_CoreParameter.graphicsContext;
@@ -678,6 +680,7 @@ void PSP_Shutdown(bool success) {
 
 	// Do nothing if we never inited.
 	if (g_bootState == BootState::Off) {
+		ERROR_LOG(Log::Loader, "Unexpected PSP_Shutdown");
 		return;
 	}
 
@@ -710,8 +713,11 @@ void PSP_Shutdown(bool success) {
 	if (success) {
 		g_bootState = BootState::Off;
 	}
+
+	IncrementDebugCounter(DebugCounter::GAME_SHUTDOWN);
 }
 
+// Do not use. Currently only used from the websocket debugger
 BootState PSP_Reboot(std::string *error_string) {
 	if (g_bootState != BootState::Complete) {
 		return g_bootState;

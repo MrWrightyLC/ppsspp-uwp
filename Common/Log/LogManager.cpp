@@ -149,15 +149,6 @@ void LogManager::Shutdown() {
 
 	ringLog_.Clear();
 	initialized_ = false;
-
-	for (size_t i = 0; i < ARRAY_SIZE(g_log); i++) {
-		g_log[i].enabled = true;
-#if defined(_DEBUG)
-		g_log[i].level = LogLevel::LDEBUG;
-#else
-		g_log[i].level = LogLevel::LINFO;
-#endif
-	}
 }
 
 LogManager::LogManager() {
@@ -206,10 +197,11 @@ void LogManager::SetFileLogPath(const Path &filename) {
 
 	if (!filename.empty()) {
 		logFilename_ = Path(filename);
+		File::CreateFullPath(logFilename_.NavigateUp());
 		fp_ = File::OpenCFile(logFilename_, "at");
 		logFileOpenFailed_ = fp_ == nullptr;
 		if (logFileOpenFailed_) {
-			printf("Failed to open log file %s", filename.c_str());
+			printf("Failed to open log file %s\n", filename.c_str());
 		}
 	}
 }
@@ -233,7 +225,7 @@ void LogManager::LoadConfig(const Section *section, bool debugDefaults) {
 }
 
 void LogManager::SetOutputsEnabled(LogOutput outputs) {
-	outputs_ = outputs; 
+	outputs_ = outputs;
 	if (outputs & LogOutput::File) {
 		SetFileLogPath(logFilename_);
 	}
