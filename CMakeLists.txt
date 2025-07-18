@@ -72,7 +72,6 @@ if(CMAKE_SYSTEM_PROCESSOR)
 	elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "^loongarch64")
 		set(LOONGARCH64_DEVICE ON)
 		add_compile_options(-mlsx)
-		add_compile_options(-mlasx)
 	else()
 		message("Unknown CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
 	endif()
@@ -336,6 +335,9 @@ endif()
 
 include_directories("${CMAKE_SOURCE_DIR}")
 
+if(ANDROID_LEGACY)
+	add_compile_definitions(ANDROID_LEGACY)
+endif()
 if(USING_EGL)
 	add_compile_definitions(USING_EGL)
 endif()
@@ -396,7 +398,7 @@ if(NOT MSVC)
 		# This one is very useful but has many false positives.
 		add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wno-class-memaccess>")
 	else()
-		add_compile_options(-Wno-deprecated-declarations)
+		add_compile_options(-Wno-deprecated-declarations -Wno-missing-braces)
 	endif()
 
 	if(ANDROID)
@@ -597,6 +599,8 @@ source_group(RISCV64 FILES ${CommonRISCV64})
 set(CommonLOONGARCH64
 	${CommonJIT}
 	Common/LoongArchCPUDetect.cpp
+	Common/LoongArch64Emitter.cpp
+	Common/LoongArch64Emitter.h
 	Core/MIPS/fake/FakeJit.cpp
 	Core/MIPS/fake/FakeJit.h
 )
@@ -604,12 +608,6 @@ source_group(LOONGARCH64 FILES ${CommonLOONGARCH64})
 
 if(WIN32)
 	set(CommonD3D
-		Common/GPU/D3D9/D3D9ShaderCompiler.cpp
-		Common/GPU/D3D9/D3D9ShaderCompiler.h
-		Common/GPU/D3D9/D3D9StateCache.cpp
-		Common/GPU/D3D9/D3D9StateCache.h
-		Common/GPU/D3D9/thin3d_d3d9.cpp
-		Common/GPU/D3D9/D3DCompilerLoader.cpp
 		Common/GPU/D3D11/thin3d_d3d11.cpp
 		Common/GPU/D3D11/D3D11Loader.cpp
 		Common/GPU/D3D11/D3D11Loader.h
@@ -845,6 +843,7 @@ add_library(Common STATIC
 	Common/Render/Text/draw_text_win.h
 	Common/Render/Text/draw_text_uwp.cpp
 	Common/Render/Text/draw_text_uwp.h
+	Common/Audio/AudioBackend.h
 	Common/System/Display.cpp
 	Common/System/Display.h
 	Common/System/System.h
@@ -1516,7 +1515,7 @@ else()
 endif()
 
 if(WIN32)
-	target_link_libraries(Common winmm d3d9 dsound dxguid Version)
+	target_link_libraries(Common winmm dsound dxguid Version)
 endif()
 
 if(NOT LIBRETRO)
@@ -1674,6 +1673,7 @@ add_library(kirk STATIC
 	ext/libkirk/ec.c
 	ext/libkirk/kirk_engine.c
 	ext/libkirk/kirk_engine.h
+	ext/libkirk/kirk_common.h
 )
 target_include_directories(kirk PRIVATE ext/libkirk)
 
@@ -1826,6 +1826,21 @@ list(APPEND CoreExtra
 	GPU/Common/VertexDecoderRiscV.cpp
 )
 
+list(APPEND CoreExtra
+	Core/MIPS/LoongArch64/LoongArch64Asm.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompALU.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompBranch.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompFPU.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompLoadStore.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompSystem.cpp
+	Core/MIPS/LoongArch64/LoongArch64CompVec.cpp
+	Core/MIPS/LoongArch64/LoongArch64Jit.cpp
+	Core/MIPS/LoongArch64/LoongArch64Jit.h
+	Core/MIPS/LoongArch64/LoongArch64RegCache.cpp
+	Core/MIPS/LoongArch64/LoongArch64RegCache.h
+	GPU/Common/VertexDecoderLoongArch64.cpp
+)
+
 if(NOT MOBILE_DEVICE)
 	set(CoreExtra ${CoreExtra}
 		Core/AVIDump.cpp
@@ -1874,21 +1889,6 @@ set(GPU_VULKAN
 	GPU/Vulkan/VulkanUtil.h
 )
 
-set(GPU_D3D9
-	GPU/Directx9/DrawEngineDX9.cpp
-	GPU/Directx9/DrawEngineDX9.h
-	GPU/Directx9/FramebufferManagerDX9.cpp
-	GPU/Directx9/FramebufferManagerDX9.h
-	GPU/Directx9/GPU_DX9.cpp
-	GPU/Directx9/GPU_DX9.h
-	GPU/Directx9/ShaderManagerDX9.cpp
-	GPU/Directx9/ShaderManagerDX9.h
-	GPU/Directx9/StateMappingDX9.cpp
-	GPU/Directx9/StateMappingDX9.h
-	GPU/Directx9/TextureCacheDX9.cpp
-	GPU/Directx9/TextureCacheDX9.h
-)
-
 set(GPU_D3D11
 	GPU/D3D11/DrawEngineD3D11.cpp
 	GPU/D3D11/DrawEngineD3D11.h
@@ -1909,7 +1909,7 @@ set(GPU_D3D11
 # We build Vulkan even on Apple to avoid annoying build differences.
 set(GPU_IMPLS ${GPU_GLES} ${GPU_VULKAN})
 if(WIN32)
-	list(APPEND GPU_IMPLS ${GPU_D3D9} ${GPU_D3D11})
+	list(APPEND GPU_IMPLS ${GPU_D3D11})
 endif()
 
 set(GPU_SOURCES
@@ -2185,6 +2185,7 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/HLE/__sceAudio.h
 	Core/HLE/sceAdler.cpp
 	Core/HLE/sceAdler.h
+	Core/HLE/AtracBase.h
 	Core/HLE/AtracCtx.cpp
 	Core/HLE/AtracCtx.h
 	Core/HLE/AtracCtx2.cpp
@@ -2267,6 +2268,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/HLE/sceNet.h
 	Core/HLE/sceNet_lib.cpp
 	Core/HLE/sceNet_lib.h
+	Core/HLE/NetAdhocCommon.cpp
+	Core/HLE/NetAdhocCommon.h
 	Core/HLE/sceNetAdhoc.cpp
 	Core/HLE/sceNetAdhoc.h
 	Core/HLE/sceNetAdhocMatching.cpp
@@ -2451,6 +2454,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	ext/disarm.h
 	ext/riscv-disas.cpp
 	ext/riscv-disas.h
+	ext/loongarch-disasm.cpp
+	ext/loongarch-disasm.h
 	${CMAKE_CURRENT_BINARY_DIR}/git-version.cpp
 )
 
@@ -2640,12 +2645,10 @@ set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/git-version.cpp
 add_dependencies(${CoreLibName} GitVersion)
 
 set(WindowsFiles
-	Windows/DSoundStream.cpp
-	Windows/DSoundStream.h
 	Windows/WindowsAudio.cpp
 	Windows/WindowsAudio.h
-	Windows/WASAPIStream.cpp
-	Windows/WASAPIStream.h
+	Windows/WASAPIContext.cpp
+	Windows/WASAPIContext.h
 	Windows/Debugger/BreakpointWindow.cpp
 	Windows/Debugger/BreakpointWindow.h
 	Windows/Debugger/DumpMemoryWindow.cpp
@@ -2688,12 +2691,10 @@ set(WindowsFiles
 	Windows/CaptureDevice.h
 	Windows/DinputDevice.cpp
 	Windows/DinputDevice.h
-	Windows/DSoundStream.cpp
-	Windows/DSoundStream.h
+	Windows/HidInputDevice.h
+	Windows/HidInputDevice.cpp
 	Windows/EmuThread.cpp
 	Windows/EmuThread.h
-	Windows/GPU/D3D9Context.cpp
-	Windows/GPU/D3D9Context.h
 	Windows/GPU/D3D11Context.cpp
 	Windows/GPU/D3D11Context.h
 	Windows/GPU/WindowsGLContext.cpp
@@ -2719,8 +2720,6 @@ set(WindowsFiles
 	Windows/W32Util/DarkMode.cpp
 	Windows/W32Util/UAHMenuBar.h
 	Windows/W32Util/UAHMenuBar.cpp
-	Windows/WindowsHost.cpp
-	Windows/WindowsHost.h
 	Windows/MainWindow.cpp
 	Windows/MainWindow.h
 	Windows/MainWindowMenu.cpp
@@ -2739,10 +2738,15 @@ set(WindowsFiles
 	Windows/stdafx.h
 )
 
+if(ANDROID AND ARM64)
+	# Support 16kb page size on Android
+	target_link_options(${CoreLibName} PRIVATE "-Wl,-z,max-page-size=16384")
+endif()
+
 list(APPEND LinkCommon ${CoreLibName} ${CMAKE_THREAD_LIBS_INIT})
 
 if(WIN32)
-	list(APPEND LinkCommon kernel32 user32 gdi32 shell32 comctl32 dsound xinput d3d9 winmm dinput8 ole32 winspool ksuser dwmapi mf uxtheme mfplat mfreadwrite mfuuid shlwapi)
+	list(APPEND LinkCommon kernel32 user32 gdi32 shell32 comctl32 dsound xinput winmm dinput8 ole32 winspool ksuser dwmapi mf uxtheme mfplat mfreadwrite mfuuid shlwapi setupapi hid)
 	#setup_target_project(${TargetBin} Windows)
 	list(APPEND NativeAppSource ${WindowsFiles})
 endif()
@@ -2799,8 +2803,6 @@ if(HEADLESS)
 		list(APPEND HeadlessSource
 			headless/WindowsHeadlessHost.cpp
 			headless/WindowsHeadlessHost.h
-			Windows/GPU/D3D9Context.cpp
-			Windows/GPU/D3D9Context.h
 			Windows/GPU/D3D11Context.cpp
 			Windows/GPU/D3D11Context.h
 			Windows/GPU/WindowsGLContext.cpp
@@ -2829,6 +2831,7 @@ if(UNITTEST)
 		unittest/TestVertexJit.cpp
 		unittest/TestVFS.cpp
 		unittest/TestRiscVEmitter.cpp
+		unittest/TestLoongArch64Emitter.cpp
 		unittest/TestSoftwareGPUJit.cpp
 		unittest/TestThreadManager.cpp
 		unittest/JitHarness.cpp
@@ -2921,11 +2924,14 @@ if(TargetBin)
 		add_executable(${TargetBin} WIN32 ${NativeAppSource})
 		if(NOT MSVC)
 			target_compile_options(${TargetBin} PRIVATE $<$<CXX_COMPILER_ID:Clang>:-Wno-c++11-narrowing>)
-			target_link_libraries(${TargetBin} Version Dwmapi)
+			target_link_libraries(${TargetBin} Version Dwmapi Avrt)
 		endif()
 		set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${TargetBin})
 	else()
 		add_executable(${TargetBin} ${NativeAppSource})
+	endif()
+	if(ANDROID AND ARM64)
+		target_link_options(${TargetBin} PRIVATE "-Wl,-z,max-page-size=16384")
 	endif()
 	target_link_libraries(${TargetBin} ${LinkCommon} Common)
 endif()

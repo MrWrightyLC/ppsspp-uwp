@@ -293,9 +293,6 @@ void EmuScreen::ProcessGameBoot(const Path &filename) {
 		coreParam.gpuCore = GPUCORE_GLES;
 		break;
 #endif
-	case GPUBackend::DIRECT3D9:
-		coreParam.gpuCore = GPUCORE_DIRECTX9;
-		break;
 	case GPUBackend::VULKAN:
 		coreParam.gpuCore = GPUCORE_VULKAN;
 		break;
@@ -539,9 +536,8 @@ void EmuScreen::sendMessage(UIMessage message, const char *value) {
 			WARN_LOG(Log::Loader, "Can't stop during a pending boot");
 			return;
 		}
-		Achievements::UnloadGame();
-		PSP_Shutdown(true);
-		System_Notify(SystemNotification::DISASSEMBLY);
+		// The destructor will take care of shutting down.
+		screenManager()->switchScreen(new MainScreen());
 	} else if (message == UIMessage::REQUEST_GAME_RESET) {
 		if (bootPending_) {
 			WARN_LOG(Log::Loader, "Can't reset during a pending boot");
@@ -717,7 +713,8 @@ static void ShowFpsLimitNotice() {
 
 	char temp[51];
 	snprintf(temp, sizeof(temp), "%d%%", (int)((float)fpsLimit / 60.0f * 100.0f));
-	g_OSD.Show(OSDType::TRANSPARENT_STATUS, temp, "", "I_FASTFORWARD", 1.5f, "altspeed");
+	g_OSD.Show(OSDType::STATUS_ICON, temp, "", "I_FASTFORWARD", 1.5f, "altspeed");
+	g_OSD.SetFlags("altspeed", OSDMessageFlags::Transparent);
 }
 
 void EmuScreen::onVKey(VirtKey virtualKeyCode, bool down) {
@@ -900,19 +897,20 @@ void EmuScreen::ProcessVKey(VirtKey virtKey) {
 	case VIRTKEY_TEXTURE_DUMP:
 		g_Config.bSaveNewTextures = !g_Config.bSaveNewTextures;
 		if (g_Config.bSaveNewTextures) {
-			g_OSD.Show(OSDType::MESSAGE_INFO, sc->T("saveNewTextures_true", "Textures will now be saved to your storage"), 2.0, "savetexturechanged");
-			System_PostUIMessage(UIMessage::GPU_CONFIG_CHANGED);
+			g_OSD.Show(OSDType::MESSAGE_SUCCESS, sc->T("saveNewTextures_true", "Textures will now be saved to your storage"), 2.0, "savetexturechanged");
 		} else {
 			g_OSD.Show(OSDType::MESSAGE_INFO, sc->T("saveNewTextures_false", "Texture saving was disabled"), 2.0, "savetexturechanged");
 		}
+		System_PostUIMessage(UIMessage::GPU_CONFIG_CHANGED);
 		break;
 
 	case VIRTKEY_TEXTURE_REPLACE:
 		g_Config.bReplaceTextures = !g_Config.bReplaceTextures;
-		if (g_Config.bReplaceTextures)
-			g_OSD.Show(OSDType::MESSAGE_INFO, sc->T("replaceTextures_true", "Texture replacement enabled"), 2.0, "replacetexturechanged");
-		else
+		if (g_Config.bReplaceTextures) {
+			g_OSD.Show(OSDType::MESSAGE_SUCCESS, sc->T("replaceTextures_true", "Texture replacement enabled"), 2.0, "replacetexturechanged");
+		} else {
 			g_OSD.Show(OSDType::MESSAGE_INFO, sc->T("replaceTextures_false", "Textures are no longer being replaced"), 2.0, "replacetexturechanged");
+		}
 		System_PostUIMessage(UIMessage::GPU_CONFIG_CHANGED);
 		break;
 
@@ -1470,16 +1468,11 @@ void EmuScreen::update() {
 
 bool EmuScreen::checkPowerDown() {
 	// This is for handling things like sceKernelExitGame().
-	if (coreState == CORE_POWERDOWN && PSP_GetBootState() == BootState::Complete && !bootPending_) {
-		bool shutdown = false;
-		if (PSP_IsInited()) {
-			Achievements::UnloadGame();
-			PSP_Shutdown(true);
-			shutdown = true;
-		}
+	// Also for REQUEST_STOP.
+	if (coreState == CORE_POWERDOWN && (PSP_GetBootState() == BootState::Complete || PSP_GetBootState() == BootState::Off) && !bootPending_) {
 		INFO_LOG(Log::System, "SELF-POWERDOWN!");
 		screenManager()->switchScreen(new MainScreen());
-		return shutdown;
+		return true;
 	}
 	return false;
 }
@@ -1829,11 +1822,13 @@ void EmuScreen::runImDebugger() {
 			imDebugger_ = std::make_unique<ImDebugger>();
 
 			// Read the TTF font
-			size_t size = 0;
-			uint8_t *fontData = g_VFS.ReadFile("Roboto-Condensed.ttf", &size);
+			size_t propSize = 0;
+			uint8_t *propFontData = g_VFS.ReadFile("Roboto-Condensed.ttf", &propSize);
+			size_t fixedSize = 0;
+			uint8_t *fixedFontData = g_VFS.ReadFile("Inconsolata-Medium.ttf", &fixedSize);
 			// This call works even if fontData is nullptr, in which case the font just won't get loaded.
 			// This takes ownership of the font array.
-			ImGui_ImplThin3d_Init(draw, fontData, size);
+			ImGui_ImplThin3d_Init(draw, propFontData, propSize, fixedFontData, fixedSize);
 			imguiInited_ = true;
 		}
 

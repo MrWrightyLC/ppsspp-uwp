@@ -1283,12 +1283,50 @@ static int Hook_omertachinmokunookitethelegacy_download_frame() {
 // Function at 0886665C in US version (Persona 1)
 // Function at 08807DC4 in EU version (Persona 2)
 static int Hook_persona_download_frame() {
-	const u32 fb_address = 0x04088000;  // hardcoded at 088666D8
-	// const u32 dest_address = currentMIPS->r[MIPS_REG_A1];   // not relevant
-	if (Memory::IsVRAMAddress(fb_address)) {
+	// Depending on a global (curframe kind of thing), this either reads from
+	// 0x04088000 or 0x04000000 (the two addresses are hardcoded).
+	// We'd have to do some gnarly stuff to get this address, so let's just download both.
+	for (int i = 0; i < 2; i++) {
+		const u32 fb_address = i == 0 ? 0x04000000 : 0x04088000;
 		gpu->PerformReadbackToMemory(fb_address, 0x00088000);
 		NotifyMemInfo(MemBlockFlags::WRITE, fb_address, 0x00088000, "persona1_download_frame");
 	}
+	return 0;
+}
+
+static int Hook_steinsgate_download_frame() {
+	u32 fb_offset_addr;
+	if (!GetMIPSStaticAddress(fb_offset_addr, 0x1C, 0x20)) {
+		return 0;
+	}
+	const u32 fb_address = 0x04000000 + Memory::Read_U32(fb_offset_addr);
+	if (Memory::IsVRAMAddress(fb_address)) {
+		gpu->PerformReadbackToMemory(fb_address, 0x00088000);
+		NotifyMemInfo(MemBlockFlags::WRITE, fb_address, 0x00088000, "steinsgate_download_frame");
+	}
+	return 0;
+}
+
+static int Hook_infinity_download_frame() {
+	// There are a few games that share this same function.
+	// The hash matches, but due to relocations, the addresses it references differ.
+	// Because of this, the address, even though hardcoded, has to be fetched from the function.
+	u32 magic_value_addr;
+	if (!GetMIPSStaticAddress(magic_value_addr, 0x08, 0x1C)) {
+		return 0;
+	}
+
+	// Not sure why it was done like this, but that's what the actual function does.
+	const u32 fb_address = (Memory::Read_U32(magic_value_addr) & 1) ? 0x04000000 : 0x04088000;
+
+	gpu->PerformReadbackToMemory(fb_address, 0x00088000);
+	NotifyMemInfo(MemBlockFlags::WRITE, fb_address, 0x00088000, "infinity_download_frame");
+	return 0;
+}
+
+static int Hook_takuyo_download_frame() {
+	gpu->PerformReadbackToMemory(0x04088000, 0x00088000); // The offset is hardcoded.
+	NotifyMemInfo(MemBlockFlags::WRITE, 0x04088000, 0x00088000, "takuyo_download_frame");
 	return 0;
 }
 
@@ -1609,6 +1647,11 @@ static const ReplacementTableEntry entries[] = {
 	{ "brian_lara_fps_hack", &Hook_brian_lara_fps_hack, 0, REPFLAG_HOOKEXIT , 0 },
 	{ "persona1_download_frame", &Hook_persona_download_frame, 0, REPFLAG_HOOKENTER, 0 },
 	{ "persona2_download_frame", &Hook_persona_download_frame, 0, REPFLAG_HOOKENTER, 0 },
+	{ "steinsgate_download_frame", &Hook_steinsgate_download_frame, 0, REPFLAG_HOOKENTER, 0 },
+	{ "infinity_download_frame", &Hook_infinity_download_frame, 0, REPFLAG_HOOKENTER, 0 },
+	{ "takuyo_1_download_frame", &Hook_takuyo_download_frame, 0, REPFLAG_HOOKENTER, 0},
+	{ "takuyo_2_download_frame", &Hook_takuyo_download_frame, 0, REPFLAG_HOOKENTER, 0},
+	{ "takuyo_3_download_frame", &Hook_takuyo_download_frame, 0, REPFLAG_HOOKENTER, 0},
 	{}
 };
 
