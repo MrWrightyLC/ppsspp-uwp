@@ -114,6 +114,8 @@ struct CompatFlags {
 	bool SoftwareRasterDepth;
 	bool DisableHLESceFont;
 	bool ForceHLEPsmf;
+	bool SaveStatesNotRecommended;
+	bool IgnoreEnqueue;
 };
 
 struct VRCompat {

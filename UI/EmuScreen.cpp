@@ -455,7 +455,7 @@ EmuScreen::~EmuScreen() {
 	SetExtraAssertInfo(nullptr);
 	SetAssertCancelCallback(nullptr, nullptr);
 
-	g_logManager.EnableOutput(LogOutput::RingBuffer);
+	g_logManager.DisableOutput(LogOutput::RingBuffer);
 
 #ifndef MOBILE_DEVICE
 	if (g_Config.bDumpFrames && startDumping_)
@@ -1151,7 +1151,7 @@ void EmuScreen::touch(const TouchInput &touch) {
 		if (!ImGui::GetIO().WantCaptureMouse) {
 			UIScreen::touch(touch);
 		}
-	} else if (g_Config.bMouseControl && !(touch.flags & TOUCH_UP)) {
+	} else if (g_Config.bMouseControl && !(touch.flags & TOUCH_UP) && (touch.flags & TOUCH_MOUSE)) {
 		// don't do anything as the mouse pointer is hidden in this case.
 		// But we let touch-up events through to avoid getting stuck if the user toggles mouse control.
 	} else {
@@ -1177,11 +1177,11 @@ public:
 
 	void Draw(UIContext &dc) override {
 		// Should only be called when visible.
-		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath_, GameInfoFlags::BG);
+		std::shared_ptr<GameInfo> ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath_, GameInfoFlags::PIC1);
 		dc.Flush();
 
 		// PIC1 is the loading image, so let's only draw if it's available.
-		if (ginfo->Ready(GameInfoFlags::BG) && ginfo->pic1.texture) {
+		if (ginfo->Ready(GameInfoFlags::PIC1) && ginfo->pic1.texture) {
 			Draw::Texture *texture = ginfo->pic1.texture;
 			if (texture) {
 				dc.GetDrawContext()->BindTexture(0, texture);
@@ -1431,12 +1431,13 @@ void EmuScreen::update() {
 
 	if (errorMessage_.size()) {
 		auto err = GetI18NCategory(I18NCat::ERRORS);
+		auto di = GetI18NCategory(I18NCat::DIALOG);
 		std::string errLoadingFile = gamePath_.ToVisualString() + "\n";
 		errLoadingFile.append(err->T("Error loading file", "Could not load game"));
 		errLoadingFile.append(" ");
 		errLoadingFile.append(err->T(errorMessage_.c_str()));
 
-		screenManager()->push(new PromptScreen(gamePath_, errLoadingFile, "OK", ""));
+		screenManager()->push(new PromptScreen(gamePath_, errLoadingFile, di->T("OK"), ""));
 		errorMessage_.clear();
 		quit_ = true;
 		return;
@@ -1807,7 +1808,6 @@ ScreenRenderFlags EmuScreen::render(ScreenRenderMode mode) {
 	if (hasVisibleUI()) {
 		draw->SetViewport(viewport);
 		cardboardDisableButton_->SetVisibility(g_Config.bEnableCardboardVR ? UI::V_VISIBLE : UI::V_GONE);
-		screenManager()->getUIContext()->BeginFrame();
 		renderUI();
 	}
 

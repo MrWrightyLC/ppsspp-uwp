@@ -232,6 +232,13 @@ public:
 	void SetChoiceIcon(int c, ImageID id) {
 		icons_[c] = id;
 	}
+	bool IsChoiceHidden(int c) const {
+		return hidden_.find(c) != hidden_.end();
+	}
+
+	void SetPreOpenCallback(std::function<void(PopupMultiChoice *)> callback) {
+		preOpenCallback_ = callback;
+	}
 
 	UI::Event OnChoice;
 
@@ -256,6 +263,9 @@ private:
 	bool restoreFocus_ = false;
 	std::set<int> hidden_;
 	std::map<int, ImageID> icons_;
+
+	std::function<void(PopupMultiChoice *)> preOpenCallback_;
+	bool callbackExecuted_ = false;
 };
 
 // Allows passing in a dynamic vector of strings. Saves the string.

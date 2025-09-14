@@ -76,6 +76,10 @@ static const char * const logSectionName = "Log";
 
 bool TryUpdateSavedPath(Path *path);
 
+static const std::vector<std::string> defaultProAdhocServerList = {
+	"socom.cc", "psp.gameplayer.club", // TODO: Add some saved recent history too?
+};
+
 std::string GPUBackendToString(GPUBackend backend) {
 	switch (backend) {
 	case GPUBackend::OPENGL:
@@ -211,7 +215,7 @@ static float DefaultUISaturation() {
 }
 
 static int DefaultUIScaleFactor() {
-#if PPSSPP_PLATFORM(WINDOWS)
+#if PPSSPP_PLATFORM(WINDOWS) || PPSSPP_PLATFORM(LINUX) || PPSSPP_PLATFORM(MAC)
 	return -1;
 #else
 	return 0;
@@ -296,6 +300,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("RemoteShareOnStartup", &g_Config.bRemoteShareOnStartup, false, CfgFlag::DEFAULT),
 	ConfigSetting("RemoteISOSubdir", &g_Config.sRemoteISOSubdir, "/", CfgFlag::DEFAULT),
 	ConfigSetting("RemoteDebuggerOnStartup", &g_Config.bRemoteDebuggerOnStartup, false, CfgFlag::DEFAULT),
+	ConfigSetting("RemoteDebuggerLocal", &g_Config.bRemoteDebuggerLocal, false, CfgFlag::DEFAULT),
 	ConfigSetting("RemoteTab", &g_Config.bRemoteTab, false, CfgFlag::DEFAULT),
 	ConfigSetting("RemoteISOSharedDir", &g_Config.sRemoteISOSharedDir, "", CfgFlag::DEFAULT),
 	ConfigSetting("RemoteISOShareType", &g_Config.iRemoteISOShareType, (int)RemoteISOShareType::RECENT, CfgFlag::DEFAULT),
@@ -456,8 +461,8 @@ static int DefaultGPUBackend() {
 	}
 
 #if PPSSPP_PLATFORM(WINDOWS)
-	// On Win11, there's a good chance Vulkan will work by default.
-	if (IsWin11OrHigher()) {
+	// On Win10, there's a good chance Vulkan will work by default.
+	if (IsWin10OrHigher()) {
 		return (int)GPUBackend::VULKAN;
 	}
 	// On older Windows, to be safe, use Direct3D 11.
@@ -543,7 +548,9 @@ int Config::NextValidBackend() {
 #endif
 
 		// They've all failed.  Let them try the default - or on Android, OpenGL.
-		sFailedGPUBackends += ",ALL";
+		if (sFailedGPUBackends.find(",ALL") == std::string::npos) {
+			sFailedGPUBackends += ",ALL";
+		}
 		ERROR_LOG(Log::Loader, "All graphics backends failed");
 #if PPSSPP_PLATFORM(ANDROID)
 		return (int)GPUBackend::OPENGL;
@@ -723,6 +730,7 @@ static const ConfigSetting graphicsSettings[] = {
 	ConfigSetting("TexDeposterize", &g_Config.bTexDeposterize, false, CfgFlag::PER_GAME | CfgFlag::REPORT),
 	ConfigSetting("TexHardwareScaling", &g_Config.bTexHardwareScaling, false, CfgFlag::PER_GAME | CfgFlag::REPORT),
 	ConfigSetting("VSync", &g_Config.bVSync, &DefaultVSync, CfgFlag::PER_GAME),
+	ConfigSetting("VulkanPresentMode", &g_Config.iVulkanPresentationMode, (int)PresentMode::Mailbox, CfgFlag::PER_GAME),
 	ConfigSetting("BloomHack", &g_Config.iBloomHack, 0, CfgFlag::PER_GAME | CfgFlag::REPORT),
 
 	// Not really a graphics setting...
@@ -778,6 +786,9 @@ static const ConfigSetting soundSettings[] = {
 	ConfigSetting("Enable", &g_Config.bEnableSound, true, CfgFlag::PER_GAME),
 	ConfigSetting("ExtraAudioBuffering", &g_Config.bExtraAudioBuffering, false, CfgFlag::DEFAULT),
 	ConfigSetting("AudioBufferSize", &g_Config.iSDLAudioBufferSize, 256, CfgFlag::DEFAULT),
+
+	ConfigSetting("FillAudioGaps", &g_Config.bFillAudioGaps, true, CfgFlag::DEFAULT),
+	ConfigSetting("AudioSyncMode", &g_Config.iAudioSyncMode, (int)AudioSyncMode::CLASSIC_PITCH, CfgFlag::DEFAULT),
 
 	// Legacy volume settings, these get auto upgraded through default handlers on the new settings. NOTE: Must be before the new ones in the order here.
 	// The default settings here are still relevant, they will get propagated into the new ones.
@@ -958,6 +969,7 @@ static const ConfigSetting networkSettings[] = {
 	ConfigSetting("EnableWlan", &g_Config.bEnableWlan, false, CfgFlag::PER_GAME),
 	ConfigSetting("EnableAdhocServer", &g_Config.bEnableAdhocServer, false, CfgFlag::PER_GAME),
 	ConfigSetting("proAdhocServer", &g_Config.proAdhocServer, "socom.cc", CfgFlag::PER_GAME),
+	ConfigSetting("proAdhocServerList", &g_Config.proAdhocServerList, &defaultProAdhocServerList, CfgFlag::DEFAULT),
 	ConfigSetting("PortOffset", &g_Config.iPortOffset, 10000, CfgFlag::PER_GAME),
 	ConfigSetting("PrimaryDNSServer", &g_Config.sInfrastructureDNSServer, "67.222.156.250", CfgFlag::PER_GAME),
 	ConfigSetting("MinTimeout", &g_Config.iMinTimeout, 0, CfgFlag::PER_GAME),
@@ -1663,6 +1675,8 @@ bool Config::saveGameConfig(const std::string &pGameId, const std::string &title
 
 	KeyMap::SaveToIni(iniFile);
 	iniFile.Save(fullIniFilePath);
+
+	INFO_LOG(Log::Loader, "Game-specific config saved: '%s'", fullIniFilePath.c_str());
 
 	PostSaveCleanup(true);
 	return true;

@@ -125,7 +125,7 @@ public:
 	bool bAutoSaveSymbolMap;
 	bool bCompressSymbols;
 	bool bCacheFullIsoInRam;
-	int iRemoteISOPort;
+	int iRemoteISOPort; // Also used for serving a local remote debugger.
 	std::string sLastRemoteISOServer;
 	int iLastRemoteISOPort;
 	bool bRemoteISOManual;
@@ -134,6 +134,7 @@ public:
 	std::string sRemoteISOSharedDir;
 	int iRemoteISOShareType;
 	bool bRemoteDebuggerOnStartup;
+	bool bRemoteDebuggerLocal;
 	bool bRemoteTab;
 	bool bMemStickInserted;
 	int iMemStickSizeGB;
@@ -168,6 +169,8 @@ public:
 	bool bCameraMirrorHorizontal;
 	int iDisplayFramerateMode;  // enum DisplayFramerateMode. Android-only.
 	int iDisplayRefreshRate = 60;
+	int iVulkanPresentationMode;
+	bool bVSync;
 
 	bool bSoftwareRendering;
 	bool bSoftwareRenderingJit;
@@ -196,7 +199,6 @@ public:
 	bool bImmersiveMode;  // Mode on Android Kitkat 4.4 and later that hides the back button etc.
 	bool bSustainedPerformanceMode;  // Android: Slows clocks down to avoid overheating/speed fluctuations.
 	bool bIgnoreScreenInsets;  // Android: Center screen disregarding insets if this is enabled.
-	bool bVSync;
 
 	bool bShowImDebugger;
 
@@ -288,6 +290,9 @@ public:
 	// Sound
 	bool bEnableSound;
 	int iSDLAudioBufferSize;
+	int iAudioBufferSize;
+	bool bFillAudioGaps;
+	int iAudioSyncMode;
 
 	// Legacy volume settings, 0-10. These get auto-upgraded and should not be used.
 	int iLegacyGameVolume;
@@ -481,6 +486,7 @@ public:
 	// Networking
 	bool bEnableAdhocServer;
 	std::string proAdhocServer;
+	std::vector<std::string> proAdhocServerList;
 	std::string sInfrastructureDNSServer;
 	std::string sInfrastructureUsername;  // Username used for Infrastructure play. Different restrictions.
 	bool bInfrastructureAutoDNS;

@@ -46,7 +46,7 @@
 #include "Core/Config.h"
 #include "Core/ConfigValues.h"
 #include "Core/HW/StereoResampler.h"
-#include "Core/Util/AudioFormat.h"  // for clamp_u8
+#include "Core/Util/AudioFormat.h"  // for clamp_u16
 #include "Core/System.h"
 
 StereoResampler::StereoResampler() noexcept
@@ -163,6 +163,10 @@ inline int16_t MixSingleSample(int16_t s1, int16_t s2, uint16_t frac) {
 void StereoResampler::Mix(s16 *samples, unsigned int numSamples, bool consider_framelimit, int sample_rate) {
 	if (!samples)
 		return;
+
+	if (!buffer_) {
+		return;
+	}
 
 	unsigned int currentSample;
 

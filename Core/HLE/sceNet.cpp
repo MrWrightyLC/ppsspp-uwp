@@ -160,7 +160,7 @@ bool NetworkWarnUserIfOnlineAndCantSpeed() {
 }
 
 bool NetworkAllowSpeedControl() {
-	return !IsNetworkConnected();
+	return !IsNetworkConnected() || g_Config.bAllowSpeedControlWhileConnected;
 }
 
 bool NetworkAllowSaveState() {
@@ -464,6 +464,55 @@ bool PollInfraJsonDownload(std::string *jsonOutput) {
 	return true;
 }
 
+std::string ProcessHostnameWithInfraDNS(const std::string &hostname) {
+	std::string resolvedHostname = hostname;
+	
+	// Resolve any aliases. First check the ini file, then check the hardcoded DNS config.
+	auto aliasIter = g_Config.mHostToAlias.find(hostname);
+	if (aliasIter != g_Config.mHostToAlias.end()) {
+		const std::string& alias = aliasIter->second;
+		INFO_LOG(Log::sceNet, "%s - Resolved alias %s from hostname %s", __FUNCTION__, alias.c_str(), hostname.c_str());
+		resolvedHostname = alias;
+	}
+
+	if (g_Config.bInfrastructureAutoDNS) {
+		// Also look up into the preconfigured fixed DNS JSON.
+		auto fixedDNSIter = GetInfraDNSConfig().fixedDNS.find(resolvedHostname);
+		if (fixedDNSIter != GetInfraDNSConfig().fixedDNS.end()) {
+			const std::string& domainIP = fixedDNSIter->second;
+			INFO_LOG(Log::sceNet, "%s - Resolved IP %s from fixed DNS lookup with '%s'", __FUNCTION__, domainIP.c_str(), resolvedHostname.c_str());
+			resolvedHostname = domainIP;
+		}
+	}
+
+	// Check if hostname is already an IPv4 address, if so we do not need further lookup. This usually happens
+	// after the mHostToAlias or fixedDNSIter lookups, which effectively both are hardcoded DNS.
+	uint32_t resolvedAddr;
+	if (inet_pton(AF_INET, resolvedHostname.c_str(), &resolvedAddr)) {
+		INFO_LOG(Log::sceNet, "Not looking up '%s', already an IP address.", resolvedHostname.c_str());
+		return resolvedHostname;
+	}
+
+	// Now use the configured primary DNS server to do a lookup.
+	// If auto DNS, use the server from that config.
+	std::string dnsServer;
+	if (g_Config.bInfrastructureAutoDNS && !GetInfraDNSConfig().dns.empty()) {
+		dnsServer = GetInfraDNSConfig().dns;
+	} else {
+		dnsServer = g_Config.sInfrastructureDNSServer;
+	}
+
+	if (net::DirectDNSLookupIPV4(dnsServer.c_str(), resolvedHostname.c_str(), &resolvedAddr)) {
+		char temp[32];
+		inet_ntop(AF_INET, &resolvedAddr, temp, sizeof(temp));
+		INFO_LOG(Log::sceNet, "Direct lookup of '%s' from '%s' succeeded: %s", resolvedHostname.c_str(), dnsServer.c_str(), temp);
+		return std::string(temp);
+	}
+
+	WARN_LOG(Log::sceNet, "Direct DNS lookup of '%s' at DNS server '%s' failed. Will try OS DNS...", resolvedHostname.c_str(), dnsServer.c_str());
+	return resolvedHostname;
+}
+
 void InitLocalhostIP() {
 	// The entire 127.*.*.* is reserved for loopback.
 	uint32_t localIP = 0x7F000001 + PPSSPP_ID - 1;
@@ -472,7 +521,7 @@ void InitLocalhostIP() {
 	g_localhostIP.in.sin_addr.s_addr = htonl(localIP);
 	g_localhostIP.in.sin_port = 0;
 
-	std::string serverStr = StripSpaces(g_Config.proAdhocServer);
+	std::string serverStr(StripSpaces(g_Config.proAdhocServer));
 	isLocalServer = (!strcasecmp(serverStr.c_str(), "localhost") || serverStr.find("127.") == 0);
 }
 
@@ -1377,7 +1426,7 @@ static int NetApctl_AddHandler(u32 handlerPtr, u32 handlerArg) {
 	if (!foundHandler && Memory::IsValidAddress(handlerPtr)) {
 		if (apctlHandlers.size() >= MAX_APCTL_HANDLERS) {
 			ERROR_LOG(Log::sceNet, "Failed to Add handler(%x, %x): Too many handlers", handlerPtr, handlerArg);
-			retval = ERROR_NET_ADHOCCTL_TOO_MANY_HANDLERS; // TODO: What's the proper error code for Apctl's TOO_MANY_HANDLERS?
+			retval = SCE_NET_ADHOCCTL_ERROR_TOO_MANY_HANDLERS; // TODO: What's the proper error code for Apctl's TOO_MANY_HANDLERS?
 			return retval;
 		}
 		apctlHandlers[retval] = handler;

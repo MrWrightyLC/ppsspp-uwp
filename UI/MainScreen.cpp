@@ -375,16 +375,18 @@ void GameButton::Draw(UIContext &dc) {
 	} else {
 		dc.Draw()->Flush();
 	}
+
 	if (ginfo->hasConfig && !ginfo->id.empty()) {
 		const AtlasImage *gearImage = dc.Draw()->GetAtlas()->getImage(ImageID("I_GEAR"));
 		if (gearImage) {
 			if (gridStyle_) {
-				dc.Draw()->DrawImage(ImageID("I_GEAR"), x, y + h - gearImage->h*g_Config.fGameGridScale, g_Config.fGameGridScale);
+				dc.Draw()->DrawImage(ImageID("I_GEAR"), bounds_.x, y + h - gearImage->h*g_Config.fGameGridScale, g_Config.fGameGridScale);
 			} else {
-				dc.Draw()->DrawImage(ImageID("I_GEAR"), x - gearImage->w, y, 1.0f);
+				dc.Draw()->DrawImage(ImageID("I_GEAR"), bounds_.x - 1, y, 1.0f);
 			}
 		}
 	}
+
 	const int regionIndex = (int)ginfo->region;
 	if (g_Config.bShowRegionOnGameIcon && regionIndex >= 0 && regionIndex < (int)GameRegion::COUNT) {
 		const ImageID regionIcons[(int)GameRegion::COUNT] = {
@@ -398,22 +400,25 @@ void GameButton::Draw(UIContext &dc) {
 		const AtlasImage *image = dc.Draw()->GetAtlas()->getImage(regionIcons[regionIndex]);
 		if (image) {
 			if (gridStyle_) {
-				dc.Draw()->DrawImage(regionIcons[regionIndex], x + w - (image->w + 5)*g_Config.fGameGridScale,
+				dc.Draw()->DrawImage(regionIcons[regionIndex], bounds_.x + bounds_.w - (image->w + 5)*g_Config.fGameGridScale,
 							y + h - (image->h + 5)*g_Config.fGameGridScale, g_Config.fGameGridScale);
 			} else {
-				dc.Draw()->DrawImage(regionIcons[regionIndex], x - 2 - image->w - 3, y + h - image->h - 5, 1.0f);
+				dc.Draw()->DrawImage(regionIcons[regionIndex], bounds_.x + 4, y + h - image->h - 5, 1.0f);
 			}
 		}
 	}
+
 	if (gridStyle_ && g_Config.bShowIDOnGameIcon) {
 		dc.SetFontScale(0.5f*g_Config.fGameGridScale, 0.5f*g_Config.fGameGridScale);
-		dc.DrawText(ginfo->id_version, x+5, y+1, 0xFF000000, ALIGN_TOPLEFT);
-		dc.DrawText(ginfo->id_version, x+4, y, dc.theme->infoStyle.fgColor, ALIGN_TOPLEFT);
+		dc.DrawText(ginfo->id_version, bounds_.x+5, y+1, 0xFF000000, ALIGN_TOPLEFT);
+		dc.DrawText(ginfo->id_version, bounds_.x+4, y, dc.theme->infoStyle.fgColor, ALIGN_TOPLEFT);
 		dc.SetFontScale(1.0f, 1.0f);
 	}
+
 	if (overlayColor) {
 		dc.FillRect(Drawable(overlayColor), overlayBounds);
 	}
+
 	dc.RebindTexture();
 }
 
@@ -822,7 +827,7 @@ void GameBrowser::Refresh() {
 		Add(topBar);
 
 		if (*gridStyle_) {
-			gameList_ = new UI::GridLayoutList(UI::GridLayoutSettings(150*g_Config.fGameGridScale, 85*g_Config.fGameGridScale), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT));
+			gameList_ = new UI::GridLayoutList(UI::GridLayoutSettings(150*g_Config.fGameGridScale, 85*g_Config.fGameGridScale), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(10, 0, 0, 0)));
 		} else {
 			UI::LinearLayout *gl = new UI::LinearLayoutList(UI::ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT));
 			gl->SetSpacing(4.0f);
@@ -830,7 +835,7 @@ void GameBrowser::Refresh() {
 		}
 	} else {
 		if (*gridStyle_) {
-			gameList_ = new UI::GridLayoutList(UI::GridLayoutSettings(150*g_Config.fGameGridScale, 85*g_Config.fGameGridScale), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT));
+			gameList_ = new UI::GridLayoutList(UI::GridLayoutSettings(150*g_Config.fGameGridScale, 85*g_Config.fGameGridScale), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(10, 0, 0, 0)));
 		} else {
 			UI::LinearLayout *gl = new UI::LinearLayout(UI::ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT));
 			gl->SetSpacing(4.0f);
@@ -908,7 +913,7 @@ void GameBrowser::Refresh() {
 
 	if (browseFlags_ & BrowseFlags::NAVIGATE) {
 		if (path_.CanNavigateUp()) {
-			gameList_->Add(new DirButton(Path(std::string("..")), *gridStyle_, new UI::LinearLayoutParams(UI::FILL_PARENT, UI::FILL_PARENT)))->
+			gameList_->Add(new DirButton(Path(".."), *gridStyle_, new UI::LinearLayoutParams(UI::FILL_PARENT, UI::FILL_PARENT)))->
 				OnClick.Handle(this, &GameBrowser::NavigateClick);
 		}
 
@@ -955,7 +960,7 @@ void GameBrowser::Refresh() {
 
 	if (!lastText_.empty()) {
 		Add(new Spacer());
-		Add(new Choice(lastText_, new UI::LinearLayoutParams(UI::WRAP_CONTENT, UI::WRAP_CONTENT)))->OnClick.Handle(this, &GameBrowser::LastClick);
+		Add(new Choice(lastText_, new UI::LinearLayoutParams(UI::WRAP_CONTENT, UI::WRAP_CONTENT, Margins(10, 0, 0, 10))))->OnClick.Handle(this, &GameBrowser::LastClick);
 	}
 }
 
@@ -1383,7 +1388,7 @@ void MainScreen::sendMessage(UIMessage message, const char *value) {
 	UIScreenWithBackground::sendMessage(message, value);
 
 	if (message == UIMessage::REQUEST_GAME_BOOT) {
-		LaunchFile(screenManager(), this, Path(std::string(value)));
+		LaunchFile(screenManager(), this, Path(value));
 	} else if (message == UIMessage::PERMISSION_GRANTED && !strcmp(value, "storage")) {
 		RecreateViews();
 	} else if (message == UIMessage::RECENT_FILES_CHANGED) {
@@ -1449,19 +1454,19 @@ bool MainScreen::DrawBackgroundFor(UIContext &dc, const Path &gamePath, float pr
 
 	std::shared_ptr<GameInfo> ginfo;
 	if (!gamePath.empty()) {
-		ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath, GameInfoFlags::BG);
+		ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath, GameInfoFlags::PIC1);
 		// Loading texture data may bind a texture.
 		dc.RebindTexture();
 
 		// Let's not bother if there's no picture.
-		if (!ginfo->Ready(GameInfoFlags::BG) || (!ginfo->pic1.texture && !ginfo->pic0.texture)) {
+		if (!ginfo->Ready(GameInfoFlags::PIC1) || !ginfo->pic1.texture) {
 			return false;
 		}
 	} else {
 		return false;
 	}
 
-	auto pic = ginfo->GetBGPic();
+	auto pic = ginfo->GetPIC1();
 	Draw::Texture *texture = pic ? pic->texture : nullptr;
 
 	uint32_t color = whiteAlpha(ease(progress)) & 0xFFc0c0c0;

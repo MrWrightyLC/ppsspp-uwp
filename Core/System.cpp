@@ -81,6 +81,7 @@ enum CPUThreadState {
 
 MetaFileSystem pspFileSystem;
 ParamSFOData g_paramSFO;
+ParamSFOData g_paramSFORaw;
 static GlobalUIState globalUIState;
 CoreParameter g_CoreParameter;
 static FileLoader *g_loadedFile;
@@ -354,8 +355,7 @@ static bool CPU_Init(FileLoader *fileLoader, IdentifiedFileType type, std::strin
 	g_lua.Init();
 
 	// Here we have read the PARAM.SFO, let's see if we need any compatibility overrides.
-	// Homebrew usually has an empty discID, and even if they do have a disc id, it's not
-	// likely to collide with any commercial ones.
+	// Homebrew get fake disc IDs assigned to the global paramSFO, so they shouldn't clash with real games.
 	g_CoreParameter.compat.Load(g_paramSFO.GetDiscID());
 	ShowCompatWarnings(g_CoreParameter.compat);
 
@@ -585,14 +585,14 @@ bool PSP_InitStart(const CoreParameter &coreParam) {
 
 	_assert_msg_(!g_loadingThread.joinable(), "%s", coreParam.fileToStart.c_str());
 
+	Core_NotifyLifecycle(CoreLifecycle::STARTING);
+
 	g_loadingThread = std::thread([error_string]() {
 		SetCurrentThreadName("ExecLoader");
 
 		AndroidJNIThreadContext jniContext;
 
 		NOTICE_LOG(Log::Boot, "PPSSPP %s", PPSSPP_GIT_VERSION);
-
-		Core_NotifyLifecycle(CoreLifecycle::STARTING);
 
 		Path filename = g_CoreParameter.fileToStart;
 		FileLoader *loadedFile = ResolveFileLoaderTarget(ConstructFileLoader(filename));
@@ -724,6 +724,7 @@ void PSP_Shutdown(bool success) {
 	CPU_Shutdown(success);
 	GPU_Shutdown();
 	g_paramSFO.Clear();
+	g_paramSFORaw.Clear();
 	System_SetWindowTitle("");
 
 	currentMIPS = nullptr;

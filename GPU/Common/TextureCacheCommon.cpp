@@ -1172,7 +1172,7 @@ void TextureCacheCommon::SetTextureFramebuffer(const AttachCandidate &candidate)
 		}
 
 		if (needsDepthXSwizzle) {
-			texWidth = RoundUpToPowerOf2(texWidth);
+			texWidth = RoundToNextPowerOf2(texWidth);
 		}
 
 		gstate_c.curTextureWidth = texWidth;
@@ -2359,7 +2359,7 @@ void TextureCacheCommon::ApplyTextureFramebuffer(VirtualFramebuffer *framebuffer
 		int depalWidth = framebuffer->renderWidth;
 		int texWidth = framebuffer->bufferWidth;
 		if (needsDepthXSwizzle) {
-			texWidth = RoundUpToPowerOf2(framebuffer->bufferWidth);
+			texWidth = RoundToNextPowerOf2(framebuffer->bufferWidth);
 			depalWidth = texWidth * framebuffer->renderScaleFactor;
 			gstate_c.Dirty(DIRTY_UVSCALEOFFSET);
 		}
@@ -2533,7 +2533,6 @@ void TextureCacheCommon::ApplyTextureDepal(TexCacheEntry *entry) {
 void TextureCacheCommon::Clear(bool delete_them) {
 	textureShaderCache_->Clear();
 
-	ForgetLastTexture();
 	for (TexCache::iterator iter = cache_.begin(); iter != cache_.end(); ++iter) {
 		ReleaseTexture(iter->second.get(), delete_them);
 	}

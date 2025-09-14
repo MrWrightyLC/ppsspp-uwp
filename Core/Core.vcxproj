@@ -491,6 +491,7 @@
     <ClCompile Include="HW\BufferQueue.cpp" />
     <ClCompile Include="HW\Camera.cpp" />
     <ClCompile Include="HW\Display.cpp" />
+    <ClCompile Include="HW\GranularMixer.cpp" />
     <ClCompile Include="Instance.cpp" />
     <ClCompile Include="KeyMap.cpp" />
     <ClCompile Include="KeyMapDefaults.cpp" />
@@ -1002,6 +1003,7 @@
     <ClInclude Include="AVIDump.h" />
     <ClInclude Include="ConfigValues.h" />
     <ClInclude Include="Debugger\MemBlockInfo.h" />
+    <ClInclude Include="Debugger\Watch.h" />
     <ClInclude Include="Debugger\WebSocket.h" />
     <ClInclude Include="Debugger\WebSocket\BreakpointSubscriber.h" />
     <ClInclude Include="Debugger\WebSocket\ClientConfigSubscriber.h" />
@@ -1049,6 +1051,7 @@
     <ClInclude Include="HW\Atrac3Standalone.h" />
     <ClInclude Include="HW\Camera.h" />
     <ClInclude Include="HW\Display.h" />
+    <ClInclude Include="HW\GranularMixer.h" />
     <ClInclude Include="Instance.h" />
     <ClInclude Include="KeyMap.h" />
     <ClInclude Include="KeyMapDefaults.h" />

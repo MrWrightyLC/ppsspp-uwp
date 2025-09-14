@@ -117,6 +117,11 @@ enum class DepthRasterMode {
 	FORCE_ON = 3,
 };
 
+enum class AudioSyncMode {
+	GRANULAR = 0,
+	CLASSIC_PITCH = 1,
+};
+
 enum class RestoreSettingsBits : int {
 	SETTINGS = 1,
 	CONTROLS = 2,
@@ -141,6 +146,16 @@ ENUM_CLASS_BITOPS(DisableHLEFlags);
 
 std::string GPUBackendToString(GPUBackend backend);
 GPUBackend GPUBackendFromString(std::string_view backend);
+
+// Vulkan present modes, linearized. Currently in order of lowest to highest latency, hopefully won't change in the future.
+// NOTE: These values DO NOT match the flags in DrawContext caps - these are not used as a bitfield.
+enum class PresentMode {
+	Immediate = 0,  // VK_PRESENT_MODE_IMMEDIATE_KHR
+	Mailbox = 1,    // VK_PRESENT_MODE_MAILBOX_KHR
+	FifoLatestReady = 2, // VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+	FifoRelaxed = 3, // VK_PRESENT_MODE_FIFO_RELAXED_KHR
+	Fifo = 4,       // VK_PRESENT_MODE_FIFO_KHR
+};
 
 // For iIOTimingMethod.
 enum IOTimingMethods {

@@ -75,7 +75,7 @@ static void AfterSaveStateAction(SaveState::Status status, std::string_view mess
 class ScreenshotViewScreen : public PopupScreen {
 public:
 	ScreenshotViewScreen(const Path &filename, std::string title, int slot, Path gamePath)
-		: PopupScreen(title), filename_(filename), slot_(slot), gamePath_(gamePath) {}   // PopupScreen will translate Back on its own
+		: PopupScreen(title), filename_(filename), slot_(slot), gamePath_(gamePath), title_(title) {}   // PopupScreen will translate Back on its own
 
 	int GetSlot() const {
 		return slot_;
@@ -103,13 +103,26 @@ protected:
 		GridLayout *grid = content->Add(new GridLayoutList(gridsettings, new LayoutParams(FILL_PARENT, WRAP_CONTENT)));
 
 		Choice *back = new Choice(di->T("Back"));
-		Choice *undoButton = new Choice(pa->T("Undo last save"));
-		undoButton->SetEnabled(SaveState::HasUndoSaveInSlot(gamePath_, slot_));
+
+		const bool hasUndo = SaveState::HasUndoSaveInSlot(gamePath_, slot_);
+		const bool undoEnabled = g_Config.bEnableStateUndo;
+
+		Choice *undoButton = nullptr;
+		if (undoEnabled || hasUndo) {
+			// Show the undo button if state undo is enabled in settings, OR one is available. We can load it
+			// even if making new undo states is not enabled.
+			Choice *undoButton = new Choice(pa->T("Undo last save"));
+			undoButton->SetEnabled(hasUndo);
+		}
 
 		grid->Add(new Choice(pa->T("Save State")))->OnClick.Handle(this, &ScreenshotViewScreen::OnSaveState);
+		// We can unconditionally show the load state button, because you can only pop this dialog up if a state exists.
 		grid->Add(new Choice(pa->T("Load State")))->OnClick.Handle(this, &ScreenshotViewScreen::OnLoadState);
+		grid->Add(new Choice(pa->T("Delete State")))->OnClick.Handle(this, &ScreenshotViewScreen::OnDeleteState);
+		if (undoButton) {
+			grid->Add(undoButton)->OnClick.Handle(this, &ScreenshotViewScreen::OnUndoState);
+		}
 		grid->Add(back)->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
-		grid->Add(undoButton)->OnClick.Handle(this, &ScreenshotViewScreen::OnUndoState);
 
 		scroll->Add(content);
 		parent->Add(scroll);
@@ -119,9 +132,11 @@ private:
 	UI::EventReturn OnSaveState(UI::EventParams &e);
 	UI::EventReturn OnLoadState(UI::EventParams &e);
 	UI::EventReturn OnUndoState(UI::EventParams &e);
+	UI::EventReturn OnDeleteState(UI::EventParams &e);
 
 	Path filename_;
 	Path gamePath_;
+	std::string title_;
 	int slot_;
 };
 
@@ -148,6 +163,27 @@ UI::EventReturn ScreenshotViewScreen::OnUndoState(UI::EventParams &e) {
 		SaveState::UndoSaveSlot(gamePath_, slot_);
 		TriggerFinish(DR_CANCEL);
 	}
+	return UI::EVENT_DONE;
+}
+
+UI::EventReturn ScreenshotViewScreen::OnDeleteState(UI::EventParams &e) {
+	auto di = GetI18NCategory(I18NCat::DIALOG);
+
+	std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(NULL, gamePath_, GameInfoFlags::PARAM_SFO);
+
+	std::string message(di->T("DeleteConfirmSaveState"));
+	message += "\n\n" + info->GetTitle() + " (" + info->id + ")";
+	message += "\n\n" + title_;
+
+	// TODO: Also show the screenshot on the confirmation screen?
+
+	screenManager()->push(new PromptScreen(gamePath_, message, di->T("Delete"), di->T("Cancel"), [=](bool result) {
+		if (result) {
+			SaveState::DeleteSlot(gamePath_, slot_);
+			TriggerFinish(DR_CANCEL);
+		}
+	}));
+
 	return UI::EVENT_DONE;
 }
 
@@ -344,7 +380,7 @@ void GamePauseScreen::CreateSavestateControls(UI::LinearLayout *leftColumnItems,
 	}
 	leftColumnItems->Add(new Spacer(0.0));
 
-	LinearLayout *buttonRow = leftColumnItems->Add(new LinearLayout(ORIENT_HORIZONTAL));
+	LinearLayout *buttonRow = leftColumnItems->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(Margins(10, 0, 0, 0))));
 	if (g_Config.bEnableStateUndo && !Achievements::HardcoreModeActive() && NetworkAllowSaveState()) {
 		UI::Choice *loadUndoButton = buttonRow->Add(new Choice(pa->T("Undo last load")));
 		loadUndoButton->SetEnabled(SaveState::HasUndoLoad(gamePath_));
@@ -373,6 +409,7 @@ void GamePauseScreen::CreateViews() {
 	auto pa = GetI18NCategory(I18NCat::PAUSE);
 	auto ac = GetI18NCategory(I18NCat::ACHIEVEMENTS);
 	auto nw = GetI18NCategory(I18NCat::NETWORKING);
+	auto di = GetI18NCategory(I18NCat::DIALOG);
 
 	root_ = new LinearLayout(ORIENT_HORIZONTAL);
 
@@ -382,8 +419,12 @@ void GamePauseScreen::CreateViews() {
 	LinearLayout *leftColumnItems = new LinearLayoutList(ORIENT_VERTICAL, new LayoutParams(FILL_PARENT, WRAP_CONTENT));
 	leftColumn->Add(leftColumnItems);
 
+	// If no other banner added, we want to add a spacer to move the Save/Load state buttons down a bit.
+	bool bannerAdded = false;
+
 	leftColumnItems->SetSpacing(5.0f);
 	if (Achievements::IsActive()) {
+		bannerAdded = true;
 		leftColumnItems->Add(new GameAchievementSummaryView());
 
 		char buf[512];
@@ -394,6 +435,7 @@ void GamePauseScreen::CreateViews() {
 	}
 
 	if (IsNetworkConnected()) {
+		bannerAdded = true;
 		leftColumnItems->Add(new NoticeView(NoticeLevel::INFO, nw->T("Network connected"), ""));
 
 		const InfraDNSConfig &dnsConfig = GetInfraDNSConfig();
@@ -440,6 +482,23 @@ void GamePauseScreen::CreateViews() {
 	}
 
 	if (showSavestateControls) {
+		if (PSP_CoreParameter().compat.flags().SaveStatesNotRecommended) {
+			bannerAdded = true;
+			LinearLayout *horiz = new LinearLayout(UI::ORIENT_HORIZONTAL);
+			leftColumnItems->Add(horiz);
+			horiz->Add(new NoticeView(NoticeLevel::WARN, pa->T("Using save states is not recommended in this game"), "", new LinearLayoutParams(1.0f)));
+			horiz->Add(new Button(di->T("More info")))->OnClick.Add([](UI::EventParams &e) {
+				System_LaunchUrl(LaunchUrlType::BROWSER_URL, "https://www.ppsspp.org/docs/troubleshooting/save-state-time-warps");
+				return UI::EVENT_DONE;
+			});
+		}
+
+		if (!bannerAdded && System_GetPropertyInt(SYSPROP_DEVICE_TYPE) == DEVICE_TYPE_MOBILE) {
+			// Enough so that it's possible to click the save/load buttons of Save 1 without activating
+			// a pulldown on Android for example.
+			leftColumnItems->Add(new Spacer(30.0f));
+		}
+
 		CreateSavestateControls(leftColumnItems, vertical);
 	} else {
 		// Let's show the active challenges.
@@ -734,7 +793,7 @@ void GamePauseScreen::CallbackDeleteConfig(bool yes) {
 UI::EventReturn GamePauseScreen::OnCreateConfig(UI::EventParams &e) {
 	std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(NULL, gamePath_, GameInfoFlags::PARAM_SFO);
 	if (info->Ready(GameInfoFlags::PARAM_SFO)) {
-		std::string gameId = g_paramSFO.GetDiscID();
+		std::string gameId = info->id;
 		g_Config.createGameConfig(gameId);
 		g_Config.changeGameSpecific(gameId, info->GetTitle());
 		g_Config.saveGameConfig(gameId, info->GetTitle());

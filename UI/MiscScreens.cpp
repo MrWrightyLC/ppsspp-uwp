@@ -246,11 +246,11 @@ private:
 			}
 
 			std::shared_ptr<GameInfo> ginfo = GetInfo(dc, index);
-			if (ginfo && !ginfo->Ready(GameInfoFlags::BG)) {
+			if (ginfo && !ginfo->Ready(GameInfoFlags::PIC1)) {
 				// Wait for it to load.  It might be the next one.
 				break;
 			}
-			if (ginfo && (ginfo->pic1.texture || ginfo->pic0.texture)) {
+			if (ginfo && ginfo->pic1.texture) {
 				nextIndex_ = index;
 				nextT_ = t + INTERVAL;
 				break;
@@ -267,13 +267,13 @@ private:
 		const auto recentIsos = g_recentFiles.GetRecentFiles();
 		if (index >= (int)recentIsos.size())
 			return std::shared_ptr<GameInfo>();
-		return g_gameInfoCache->GetInfo(dc.GetDrawContext(), Path(recentIsos[index]), GameInfoFlags::BG);
+		return g_gameInfoCache->GetInfo(dc.GetDrawContext(), Path(recentIsos[index]), GameInfoFlags::PIC1);
 	}
 
 	static void DrawTex(UIContext &dc, std::shared_ptr<GameInfo> &ginfo, float amount) {
 		if (!ginfo || amount <= 0.0f)
 			return;
-		GameInfoTex *pic = ginfo->GetBGPic();
+		GameInfoTex *pic = ginfo->GetPIC1();
 		if (!pic)
 			return;
 
@@ -488,10 +488,10 @@ void DrawGameBackground(UIContext &dc, const Path &gamePath, float x, float y, f
 
 	std::shared_ptr<GameInfo> ginfo;
 	if (!gamePath.empty()) {
-		ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath, GameInfoFlags::BG);
+		ginfo = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath, GameInfoFlags::PIC1);
 	}
 
-	GameInfoTex *pic = (ginfo && ginfo->Ready(GameInfoFlags::BG)) ? ginfo->GetBGPic() : nullptr;
+	GameInfoTex *pic = (ginfo && ginfo->Ready(GameInfoFlags::PIC1)) ? ginfo->GetPIC1() : nullptr;
 	if (pic) {
 		dc.GetDrawContext()->BindTexture(0, pic->texture);
 		uint32_t color = whiteAlpha(ease((time_now_d() - pic->timeLoaded) * 3)) & 0xFFc0c0c0;
@@ -608,7 +608,7 @@ void UIScreenWithBackground::sendMessage(UIMessage message, const char *value) {
 void UIDialogScreenWithBackground::AddStandardBack(UI::ViewGroup *parent) {
 	using namespace UI;
 	auto di = GetI18NCategory(I18NCat::DIALOG);
-	parent->Add(new Choice(di->T("Back"), "", false, new AnchorLayoutParams(150, 64, 10, NONE, NONE, 10)))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
+	parent->Add(new Choice(di->T("Back"), "", false, new AnchorLayoutParams(190, WRAP_CONTENT, 10, NONE, NONE, 10)))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
 }
 
 void UIDialogScreenWithBackground::sendMessage(UIMessage message, const char *value) {
@@ -617,9 +617,8 @@ void UIDialogScreenWithBackground::sendMessage(UIMessage message, const char *va
 
 PromptScreen::PromptScreen(const Path &gamePath, std::string_view message, std::string_view yesButtonText, std::string_view noButtonText, std::function<void(bool)> callback)
 	: UIDialogScreenWithGameBackground(gamePath), message_(message), callback_(callback) {
-	auto di = GetI18NCategory(I18NCat::DIALOG);
-	yesButtonText_ = di->T(yesButtonText);
-	noButtonText_ = di->T(noButtonText);
+	yesButtonText_ = yesButtonText;
+	noButtonText_ = noButtonText;
 }
 
 void PromptScreen::CreateViews() {
@@ -899,13 +898,13 @@ void LogoScreen::DrawForeground(UIContext &dc) {
 
 #if !PPSSPP_PLATFORM(UWP) || defined(_DEBUG)
 	// Draw the graphics API, except on UWP where it's always D3D11
-	std::string apiName = screenManager()->getDrawContext()->GetInfoString(InfoField::APINAME);
+	std::string apiName(gr->T(screenManager()->getDrawContext()->GetInfoString(InfoField::APINAME)));
 #ifdef _DEBUG
 	apiName += ", debug build ";
 	// Add some emoji for testing.
 	apiName += CodepointToUTF8(0x1F41B) + CodepointToUTF8(0x1F41C) + CodepointToUTF8(0x1F914);
 #endif
-	dc.DrawText(gr->T(apiName.c_str()), bounds.centerX(), ppsspp_org_y + 50, textColor, ALIGN_CENTER);
+	dc.DrawText(apiName, bounds.centerX(), ppsspp_org_y + 50, textColor, ALIGN_CENTER);
 #endif
 
 	dc.Flush();

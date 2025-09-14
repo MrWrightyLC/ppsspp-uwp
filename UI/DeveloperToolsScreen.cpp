@@ -170,6 +170,9 @@ void DeveloperToolsScreen::CreateGeneralTab(UI::LinearLayout *list) {
 	list->Add(allowDebugger)->OnClick.Handle(this, &DeveloperToolsScreen::OnRemoteDebugger);
 	allowDebugger->SetEnabledPtr(&canAllowDebugger_);
 
+	CheckBox *localDebugger = list->Add(new CheckBox(&g_Config.bRemoteDebuggerLocal, dev->T("Use locally hosted remote debugger")));
+	localDebugger->SetEnabledPtr(&allowDebugger_);
+
 	list->Add(new Choice(dev->T("GPI/GPO switches/LEDs")))->OnClick.Add([=](UI::EventParams &e) {
 		screenManager()->push(new GPIGPOScreen(dev->T("GPI/GPO switches/LEDs")));
 		return UI::EVENT_DONE;
@@ -323,13 +326,14 @@ void DeveloperToolsScreen::CreateMIPSTracerTab(UI::LinearLayout *list) {
 		return UI::EVENT_CONTINUE;
 	});
 
-	Button *FlushTrace = list->Add(new Button(dev->T("Flush the trace")));
+	list->Add(new ItemHeader(dev->T("MIPSTracer actions")));
+	Choice *FlushTrace = list->Add(new Choice(dev->T("Flush the trace")));
 	FlushTrace->OnClick.Handle(this, &DeveloperToolsScreen::OnMIPSTracerFlushTrace);
 
-	Button *InvalidateJitCache = list->Add(new Button(dev->T("Clear the JIT cache")));
+	Choice *InvalidateJitCache = list->Add(new Choice(dev->T("Clear the JIT cache")));
 	InvalidateJitCache->OnClick.Handle(this, &DeveloperToolsScreen::OnMIPSTracerClearJitCache);
 
-	Button *ClearMIPSTracer = list->Add(new Button(dev->T("Clear the MIPSTracer")));
+	Choice *ClearMIPSTracer = list->Add(new Choice(dev->T("Clear the MIPSTracer")));
 	ClearMIPSTracer->OnClick.Handle(this, &DeveloperToolsScreen::OnMIPSTracerClearTracer);
 }
 
@@ -343,8 +347,13 @@ void DeveloperToolsScreen::CreateNetworkTab(UI::LinearLayout *list) {
 	using namespace UI;
 	auto dev = GetI18NCategory(I18NCat::DEVELOPER);
 	auto ms = GetI18NCategory(I18NCat::MAINSETTINGS);
+	auto ri = GetI18NCategory(I18NCat::REMOTEISO);
 	list->Add(new ItemHeader(ms->T("Networking")));
 	list->Add(new CheckBox(&g_Config.bDontDownloadInfraJson, dev->T("Don't download infra-dns.json")));
+
+	// This is shared between RemoteISO and the remote debugger.
+	PopupSliderChoice *portChoice = new PopupSliderChoice(&g_Config.iRemoteISOPort, 0, 65535, 0, ri->T("Local Server Port", "Local Server Port"), 100, screenManager());
+	list->Add(portChoice);
 }
 
 void DeveloperToolsScreen::CreateGraphicsTab(UI::LinearLayout *list) {
@@ -480,7 +489,7 @@ void DeveloperToolsScreen::CreateTabs() {
 	AddTab("Tests", dev->T("Tests"), [this](UI::LinearLayout *parent) {
 		CreateTestsTab(parent);
 	});
-	AddTab("DumpFiles", sy->T("Dump files"), [this](UI::LinearLayout *parent) {
+	AddTab("DumpFiles", dev->T("Dump files"), [this](UI::LinearLayout *parent) {
 		CreateDumpFileTab(parent);
 	});
 	// Need a better title string.

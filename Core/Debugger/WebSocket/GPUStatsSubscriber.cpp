@@ -89,8 +89,8 @@ protected:
 
 DebuggerSubscriber *WebSocketGPUStatsInit(DebuggerEventHandlerMap &map) {
 	auto p = new WebSocketGPUStatsState();
-	map["gpu.stats.get"] = std::bind(&WebSocketGPUStatsState::Get, p, std::placeholders::_1);
-	map["gpu.stats.feed"] = std::bind(&WebSocketGPUStatsState::Feed, p, std::placeholders::_1);
+	map["gpu.stats.get"] = [p](DebuggerRequest &req) { p->Get(req); };
+	map["gpu.stats.feed"] = [p](DebuggerRequest &req) { p->Feed(req); };
 
 	return p;
 }
@@ -128,8 +128,10 @@ void WebSocketGPUStatsState::FlipListener() {
 
 	stats.frameTimes.resize(valid);
 	stats.sleepTimes.resize(valid);
-	memcpy(&stats.frameTimes[0], history, sizeof(double) * valid);
-	memcpy(&stats.sleepTimes[0], sleepHistory, sizeof(double) * valid);
+	if (valid > 0) {
+		memcpy(&stats.frameTimes[0], history, sizeof(double) * valid);
+		memcpy(&stats.sleepTimes[0], sleepHistory, sizeof(double) * valid);
+	}
 
 	sendNext_ = false;
 }
@@ -149,6 +151,7 @@ void WebSocketGPUStatsState::FlipListener() {
 //
 // Note: stats are returned after the next flip completes (paused if CPU or GPU in break.)
 // Note: info and timing may not be accurate if certain settings are disabled.
+// Note: sending this event with no ticket will not trigger a response! (TODO: maybe fix this?)
 void WebSocketGPUStatsState::Get(DebuggerRequest &req) {
 	if (PSP_GetBootState() != BootState::Complete)
 		return req.Fail("CPU not started");

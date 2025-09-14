@@ -173,8 +173,8 @@ static int ComputeAtracStateAndInitSecondBuffer(SceAtracIdInfo *info, u32 readSi
 	int loopEnd;
 
 	if (bufferSize < (u32)info->fileDataEnd) {
-		if (info->streamDataByte < (s32)info->sampleSize * 3) {
-			return 0x80630011;
+		if (info->streamDataByte < (s32)info->sampleSize * 2) {
+			return SCE_ERROR_ATRAC_SIZE_TOO_SMALL;
 		}
 		loopEnd = info->loopEnd;
 		state = ATRAC_STATUS_STREAMED_WITHOUT_LOOP;
@@ -206,8 +206,7 @@ int InitContextFromTrackInfo(SceAtracContext *ctx, const TrackInfo *wave, u32 bu
 	(ctx->info).firstValidSample = extraSamples + wave->firstSampleOffset;
 	int endSample3 = wave->endSample;
 	(ctx->info).sampleSize = wave->blockAlign;
-	InitLengthAndLoop(&ctx->info, endSample3, wave->waveDataSize, wave->firstSampleOffset, wave->loopStart,
-		wave->loopEnd);
+	InitLengthAndLoop(&ctx->info, endSample3, wave->waveDataSize, wave->firstSampleOffset, wave->loopStart, wave->loopEnd);
 	const int dataOff = wave->dataOff;
 	const int endSample = (ctx->info).endSample;
 	(ctx->info).streamDataByte = readSize - dataOff;
@@ -959,13 +958,22 @@ u32 Atrac2::DecodeInternal(u32 outbufAddr, int *SamplesNum, int *finish) {
 	return 0;
 }
 
-int Atrac2::SetData(const Track &track, u32 bufferAddr, u32 readSize, u32 bufferSize, int outputChannels) {
+int Atrac2::SetData(const Track &track, u32 bufferAddr, u32 readSize, u32 bufferSize, u32 fileSize, int outputChannels, bool isAA3) {
+	_dbg_assert_(outputChannels == 1 || outputChannels == 2);
 	TrackInfo trackInfo{};
 	if (bufferAddr) {
-		int retval = ParseWaveAT3(Memory::GetPointerRange(bufferAddr, bufferSize), readSize, &trackInfo);
-		if (retval < 0) {
-			ERROR_LOG(Log::Atrac, "Atrac2::SetData: ParseWaveAT3 failed with %08x", retval);
-			return retval;
+		if (!isAA3) {
+			int retval = ParseWaveAT3(Memory::GetPointerRange(bufferAddr, bufferSize), readSize, &trackInfo);
+			if (retval < 0) {
+				ERROR_LOG(Log::Atrac, "Atrac2::SetData: ParseWaveAT3 failed with %08x", retval);
+				return retval;
+			}
+		} else {
+			int retval = ParseAA3(Memory::GetPointerRange(bufferAddr, bufferSize), readSize, fileSize, &trackInfo);
+			if (retval < 0) {
+				ERROR_LOG(Log::Atrac, "Atrac2::SetData: ParseAA3 failed with %08x", retval);
+				return retval;
+			}
 		}
 	}
 
@@ -985,11 +993,11 @@ int Atrac2::SetData(const Track &track, u32 bufferAddr, u32 readSize, u32 buffer
 		"Atrac: sampleSize: %d buffer: %08x bufferByte: %d firstValidSample: %d\n"
 		"endSample: %d loopStart: %d loopEnd: %d\n"
 		"dataOff: %d curFileOff: %d streamOff: %d streamDataByte: %d\n"
-		"fileDataEnd: %d decodePos: %d numSkipFrames: %d",
+		"fileDataEnd: %d decodePos: %d numSkipFrames: %d channels: %d",
 		info.sampleSize, info.buffer, info.bufferByte, info.firstValidSample,
 		info.endSample, info.loopStart, info.loopEnd,
 		info.dataOff, info.curFileOff, info.streamOff, info.streamDataByte,
-		info.fileDataEnd, info.decodePos, info.numSkipFrames
+		info.fileDataEnd, info.decodePos, info.numSkipFrames, info.numChan
 	);
 
 	int skipCount = 0;  // TODO: use for delay

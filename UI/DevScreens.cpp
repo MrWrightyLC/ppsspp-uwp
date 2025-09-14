@@ -53,6 +53,7 @@
 #include "Common/StringUtils.h"
 #include "Common/GPU/ShaderWriter.h"
 
+#include "Core/WebServer.h"
 #include "Core/MemMap.h"
 #include "Core/Config.h"
 #include "Core/ConfigValues.h"
@@ -71,6 +72,7 @@
 #include "UI/DevScreens.h"
 #include "UI/MainScreen.h"
 #include "UI/EmuScreen.h"
+#include "UI/OnScreenDisplay.h"
 #include "UI/ControlMappingScreen.h"
 #include "UI/DeveloperToolsScreen.h"
 #include "UI/JitCompareScreen.h"
@@ -154,6 +156,21 @@ void DevMenuScreen::CreatePopupContents(UI::ViewGroup *parent) {
 		g_Config.bShowImDebugger = !g_Config.bShowImDebugger;
 		return UI::EVENT_DONE;
 	});
+
+	if (WebServerRunning(WebServerFlags::DEBUGGER)) {
+		items->Add(new Choice(dev->T("Remote debugger")))->OnClick.Add([](UI::EventParams &e) {
+			int port = g_Config.iRemoteISOPort;  // Also used for serving a local remote debugger.
+			if (g_Config.bRemoteDebuggerLocal) {
+				// TODO: Need to modify this URL to add /cpu when we upgrade to the latest version of the web debugger.
+				char uri[64];
+				snprintf(uri, sizeof(uri), "http://localhost:%d/debugger/", port);
+				System_LaunchUrl(LaunchUrlType::BROWSER_URL, uri);
+			} else {
+				System_LaunchUrl(LaunchUrlType::BROWSER_URL, "http://ppsspp-debugger.unknownbrackets.org/cpu");  // NOTE: https doesn't work
+			}
+			return UI::EVENT_DONE;
+		});
+	}
 
 	items->Add(new Choice(sy->T("Developer Tools")))->OnClick.Handle(this, &DevMenuScreen::OnDeveloperTools);
 
@@ -243,23 +260,13 @@ void GPIGPOScreen::CreatePopupContents(UI::ViewGroup *parent) {
 
 void LogViewScreen::UpdateLog() {
 	using namespace UI;
-	const RingbufferLog *ring = g_logManager.GetRingbuffer();
-	if (!ring)
-		return;
+	const RingbufferLog &ring = g_logManager.GetRingbuffer();
 	vert_->Clear();
 
 	// TODO: Direct rendering without TextViews.
-	for (int i = ring->GetCount() - 1; i >= 0; i--) {
-		TextView *v = vert_->Add(new TextView(StripSpaces(ring->TextAt(i)), FLAG_DYNAMIC_ASCII, true));
-		uint32_t color = 0xFFFFFF;
-		switch (ring->LevelAt(i)) {
-		case LogLevel::LDEBUG: color = 0xE0E0E0; break;
-		case LogLevel::LWARNING: color = 0x50FFFF; break;
-		case LogLevel::LERROR: color = 0x5050FF; break;
-		case LogLevel::LNOTICE: color = 0x30FF30; break;
-		case LogLevel::LINFO: color = 0xFFFFFF; break;
-		case LogLevel::LVERBOSE: color = 0xC0C0C0; break;
-		}
+	for (int i = ring.GetCount() - 1; i >= 0; i--) {
+		TextView *v = vert_->Add(new TextView(StripSpaces(ring.TextAt(i)), FLAG_DYNAMIC_ASCII, true));
+		uint32_t color = LogManager::GetLevelColor(ring.LevelAt(i));
 		v->SetTextColor(0xFF000000 | color);
 	}
 	toBottom_ = true;
@@ -552,7 +559,7 @@ void SystemInfoScreen::CreateDeviceInfoTab(UI::LinearLayout *deviceSpecs) {
 	UI::CollapsibleSection *systemInfo = deviceSpecs->Add(new UI::CollapsibleSection(si->T("System Information")));
 
 	systemInfo->Add(new Choice(si->T("Copy summary to clipboard")))->OnClick.Handle(this, &SystemInfoScreen::CopySummaryToClipboard);
-	systemInfo->Add(new InfoItem(si->T("System Name", "Name"), System_GetProperty(SYSPROP_NAME)));
+	systemInfo->Add(new InfoItem(si->T("System Name"), System_GetProperty(SYSPROP_NAME)));
 #if PPSSPP_PLATFORM(ANDROID)
 	systemInfo->Add(new InfoItem(si->T("System Version"), StringFromInt(System_GetPropertyInt(SYSPROP_SYSTEMVERSION))));
 #elif PPSSPP_PLATFORM(WINDOWS)
@@ -574,7 +581,7 @@ void SystemInfoScreen::CreateDeviceInfoTab(UI::LinearLayout *deviceSpecs) {
 
 	// Don't bother showing the CPU name if we don't have one.
 	if (strcmp(cpu_info.brand_string, "Unknown") != 0) {
-		cpuInfo->Add(new InfoItem(si->T("CPU Name", "Name"), cpu_info.brand_string));
+		cpuInfo->Add(new InfoItem(si->T("CPU Name"), cpu_info.brand_string));
 	}
 
 	int totalThreads = cpu_info.num_cores * cpu_info.logical_cpu_count;
@@ -704,7 +711,14 @@ void SystemInfoScreen::CreateDeviceInfoTab(UI::LinearLayout *deviceSpecs) {
 	}
 
 	// Don't show on Windows, since it's always treated as 60 there.
-	displayInfo->Add(new InfoItem(si->T("Refresh rate"), StringFromFormat(si->T_cstr("%0.2f Hz"), (float)System_GetPropertyFloat(SYSPROP_DISPLAY_REFRESH_RATE))));
+	
+	const double displayHz = System_GetPropertyFloat(SYSPROP_DISPLAY_REFRESH_RATE);
+	displayInfo->Add(new InfoItem(si->T("Refresh rate"), StringFromFormat(si->T_cstr("%0.2f Hz"), displayHz)));
+
+	if (displayHz < 55.0f) {
+		displayInfo->Add(new NoticeView(NoticeLevel::WARN, ApplySafeSubstitutions(gr->T("Your display is set to a low refresh rate: %1 Hz. 60 Hz or higher is recommended."), (int)displayHz), ""));
+	}
+
 	std::string presentModes;
 	if (draw->GetDeviceCaps().presentModesSupported & Draw::PresentMode::FIFO) presentModes += "FIFO, ";
 	if (draw->GetDeviceCaps().presentModesSupported & Draw::PresentMode::IMMEDIATE) presentModes += "IMMEDIATE, ";
@@ -1160,7 +1174,7 @@ void FrameDumpTestScreen::CreateViews() {
 	TabHolder *tabHolder;
 	tabHolder = new TabHolder(ORIENT_VERTICAL, 200, nullptr, new AnchorLayoutParams(10, 0, 10, 0, false));
 	root_->Add(tabHolder);
-	AddStandardBack(root_);
+	tabHolder->AddBack(this);
 	tabHolder->SetTag("DumpTypes");
 	root_->SetDefaultFocusView(tabHolder);
 
@@ -1208,7 +1222,7 @@ void FrameDumpTestScreen::update() {
 			// We rely slightly on nginx listing format here. Not great.
 			SplitString(listingHtml, '\n', lines);
 			for (auto &line : lines) {
-				std::string trimmed = StripSpaces(line);
+				std::string trimmed(StripSpaces(line));
 				if (startsWith(trimmed, "<a href=\"")) {
 					trimmed = trimmed.substr(strlen("<a href=\""));
 					size_t offset = trimmed.find('\"');
@@ -1312,7 +1326,7 @@ void TouchTestScreen::CreateViews() {
 	root_->Add(new Choice(gr->T("Recreate Activity")))->OnClick.Handle(this, &TouchTestScreen::OnRecreateActivity);
 #endif
 	root_->Add(new CheckBox(&g_Config.bImmersiveMode, gr->T("FullScreen", "Full Screen")))->OnClick.Handle(this, &TouchTestScreen::OnImmersiveModeChange);
-	root_->Add(new Button(di->T("Back")))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
+	root_->Add(new Button(di->T("Back"), new LinearLayoutParams(FILL_PARENT, 64, Margins(10, 0))))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
 }
 
 void TouchTestScreen::UpdateLogView() {

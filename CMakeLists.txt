@@ -184,6 +184,7 @@ option(USE_VULKAN_DISPLAY_KHR "Enable or disable full screen display of Vulkan" 
 option(USING_QT_UI "Set to ON if you wish to use the Qt frontend wrapper" ${USING_QT_UI})
 option(MOBILE_DEVICE "Set to ON when targeting a mobile device" ${MOBILE_DEVICE})
 option(HEADLESS "Set to OFF to not generate the PPSSPPHeadless target" ${HEADLESS})
+option(ATLAS_TOOL "Set to OFF to not generate the ATLAS_TOOL target" ${ATLAS_TOOL})
 option(UNITTEST "Set to ON to generate the unittest target" ${UNITTEST})
 option(SIMULATOR "Set to ON when targeting an x86 simulator of an ARM platform" ${SIMULATOR})
 option(LIBRETRO "Set to ON to generate the libretro target" OFF)
@@ -827,6 +828,8 @@ add_library(Common STATIC
 	Common/Net/WebsocketServer.h
 	Common/Profiler/Profiler.cpp
 	Common/Profiler/Profiler.h
+	Common/Render/AtlasGen.cpp
+	Common/Render/AtlasGen.h
 	Common/Render/TextureAtlas.cpp
 	Common/Render/TextureAtlas.h
 	Common/Render/DrawBuffer.cpp
@@ -1059,7 +1062,6 @@ else()
 		ext/zlib/inflate.h
 		ext/zlib/inftrees.c
 		ext/zlib/inftrees.h
-		ext/zlib/make_vms.com
 		ext/zlib/trees.c
 		ext/zlib/trees.h
 		ext/zlib/uncompr.c
@@ -2074,6 +2076,7 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/Debugger/MemBlockInfo.h
 	Core/Debugger/SymbolMap.cpp
 	Core/Debugger/SymbolMap.h
+	Core/Debugger/Watch.h
 	Core/Debugger/DisassemblyManager.cpp
 	Core/Debugger/DisassemblyManager.h
 	Core/Debugger/WebSocket.cpp
@@ -2357,6 +2360,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/HW/Camera.h
 	Core/HW/Display.cpp
 	Core/HW/Display.h
+	Core/HW/GranularMixer.cpp
+	Core/HW/GranularMixer.h
 	Core/HW/MediaEngine.cpp
 	Core/HW/MediaEngine.h
 	Core/HW/MpegDemux.cpp
@@ -2788,7 +2793,6 @@ set(NativeAssets
 	source_assets/image/icon_regular_72.png
 )
 
-
 if(HEADLESS)
 	set(HeadlessSource
 		headless/Headless.cpp
@@ -2861,6 +2865,17 @@ if(UNITTEST)
 	add_test(quick_texhash PPSSPPUnitTest QuickTexHash)
 	add_test(clz PPSSPPUnitTest CLZ)
 	add_test(shadergen PPSSPPUnitTest ShaderGenerators)
+endif()
+
+if(ATLAS_TOOL)
+	include_directories(ext/freetype/include)
+
+	set(AtlasToolSource
+		ext/native/tools/atlastool.cpp
+	)
+	add_executable(AtlasTool ${AtlasToolSource})
+	target_link_libraries(AtlasTool ${LinkCommon} freetype)
+	setup_target_project(AtlasTool atlastool)
 endif()
 
 if(LIBRETRO)

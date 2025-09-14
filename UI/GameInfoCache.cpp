@@ -604,7 +604,7 @@ public:
 					info_->icon.dataLoaded = true;
 				}
 
-				if (flags_ & GameInfoFlags::BG) {
+				if (flags_ & GameInfoFlags::PIC0) {
 					if (pbp.GetSubFileSize(PBP_PIC0_PNG) > 0) {
 						std::string data;
 						pbp.GetSubFileAsString(PBP_PIC0_PNG, &data);
@@ -612,6 +612,8 @@ public:
 						info_->pic0.data = std::move(data);
 						info_->pic0.dataLoaded = true;
 					}
+				}
+				if (flags_ & GameInfoFlags::PIC1) {
 					if (pbp.GetSubFileSize(PBP_PIC1_PNG) > 0) {
 						std::string data;
 						pbp.GetSubFileAsString(PBP_PIC1_PNG, &data);
@@ -679,7 +681,7 @@ handleELF:
 				ReadFileToString(&umd, "/ICON0.PNG", &info_->icon.data, &info_->lock);
 				info_->icon.dataLoaded = true;
 			}
-			if (flags_ & GameInfoFlags::BG) {
+			if (flags_ & GameInfoFlags::PIC1) {
 				ReadFileToString(&umd, "/PIC1.PNG", &info_->pic1.data, &info_->lock);
 				info_->pic1.dataLoaded = true;
 			}
@@ -735,9 +737,11 @@ handleELF:
 					ReadFileToString(&umd, "/PSP_GAME/ICON0.PNG", &info_->icon.data, &info_->lock);
 					info_->icon.dataLoaded = true;
 				}
-				if (flags_ & GameInfoFlags::BG) {
+				if (flags_ & GameInfoFlags::PIC0) {
 					ReadFileToString(&umd, "/PSP_GAME/PIC0.PNG", &info_->pic0.data, &info_->lock);
 					info_->pic0.dataLoaded = true;
+				}
+				if (flags_ & GameInfoFlags::PIC1) {
 					ReadFileToString(&umd, "/PSP_GAME/PIC1.PNG", &info_->pic1.data, &info_->lock);
 					info_->pic1.dataLoaded = true;
 				}
@@ -787,8 +791,11 @@ handleELF:
 					}
 				}
 
-				if (flags_ & GameInfoFlags::BG) {
+				if (flags_ & GameInfoFlags::PIC0) {
 					info_->pic0.dataLoaded = ReadFileToString(&umd, "/PSP_GAME/PIC0.PNG", &info_->pic0.data, &info_->lock);
+				}
+
+				if (flags_ & GameInfoFlags::PIC1) {
 					info_->pic1.dataLoaded = ReadFileToString(&umd, "/PSP_GAME/PIC1.PNG", &info_->pic1.data, &info_->lock);
 				}
 
@@ -888,15 +895,12 @@ private:
 };
 
 GameInfoCache::GameInfoCache() {
-	Init();
 }
 
 GameInfoCache::~GameInfoCache() {
 	Clear();
 	Shutdown();
 }
-
-void GameInfoCache::Init() {}
 
 void GameInfoCache::Shutdown() {
 	CancelAll();
@@ -933,7 +937,7 @@ void GameInfoCache::FlushBGs() {
 			iter->second->sndFileData.clear();
 			iter->second->sndDataLoaded = false;
 		}
-		iter->second->hasFlags &= ~(GameInfoFlags::BG | GameInfoFlags::SND);
+		iter->second->hasFlags &= ~(GameInfoFlags::PIC0 | GameInfoFlags::PIC1 | GameInfoFlags::SND);
 	}
 }
 
@@ -977,7 +981,7 @@ void GameInfoCache::PurgeType(IdentifiedFileType fileType) {
 
 // Call on the main thread ONLY - that is from stuff called from NativeFrame.
 // Can also be called from the audio thread for menu background music, but that cannot request images!
-std::shared_ptr<GameInfo> GameInfoCache::GetInfo(Draw::DrawContext *draw, const Path &gamePath, GameInfoFlags wantFlags) {
+std::shared_ptr<GameInfo> GameInfoCache::GetInfo(Draw::DrawContext *draw, const Path &gamePath, GameInfoFlags wantFlags, GameInfoFlags *outHasFlags) {
 	const std::string &pathStr = gamePath.ToString();
 
 	// _dbg_assert_(gamePath != GetSysDirectory(DIRECTORY_SAVEDATA));
@@ -999,9 +1003,12 @@ std::shared_ptr<GameInfo> GameInfoCache::GetInfo(Draw::DrawContext *draw, const 
 		{
 			// Careful now!
 			std::unique_lock<std::mutex> lock(info->lock);
-			GameInfoFlags hasFlags = info->hasFlags | info->pendingFlags;  // We don't want to re-fetch data that we have, so or in pendingFlags.
-			wanted = (GameInfoFlags)((int)wantFlags & ~(int)hasFlags);  // & is reserved for testing. ugh.
+			GameInfoFlags willHaveFlags = info->hasFlags | info->pendingFlags;  // We don't want to re-fetch data that we have, so or in pendingFlags.
+			wanted = (GameInfoFlags)((int)wantFlags & ~(int)willHaveFlags);  // & is reserved for testing so we have to cast to int. ugh.
 			info->pendingFlags |= wanted;
+			if (outHasFlags) {
+				*outHasFlags = info->hasFlags;
+			}
 		}
 		if (wanted != (GameInfoFlags)0) {
 			// We're missing info that we want. Go get it!
@@ -1015,6 +1022,9 @@ std::shared_ptr<GameInfo> GameInfoCache::GetInfo(Draw::DrawContext *draw, const 
 	info->pendingFlags = wantFlags;
 	info->lastAccessedTime = time_now_d();
 	info_.insert(std::make_pair(pathStr, info));
+	if (outHasFlags) {
+		*outHasFlags = info->hasFlags;
+	}
 	mapLock_.unlock();
 
 	// Just get all the stuff we wanted.

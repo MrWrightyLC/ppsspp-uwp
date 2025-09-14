@@ -93,7 +93,7 @@ bool System_GetPropertyBool(SystemProperty prop) {
 	}
 }
 void System_Notify(SystemNotification notification) {}
-void System_PostUIMessage(UIMessage message, const std::string &param) {}
+void System_PostUIMessage(UIMessage message, std::string_view param) {}
 void System_RunOnMainThread(std::function<void()>) {}
 bool System_MakeRequest(SystemRequestType type, int requestId, const std::string &param1, const std::string &param2, int64_t param3, int64_t param4) {
 	switch (type) {
@@ -289,6 +289,8 @@ std::vector<std::string> ReadFromListFile(const std::string &listFilename) {
 	char temp[2048]{};
 
 	if (listFilename == "-") {
+		// If you get stuck here in the debugger, you accidentally passed '@-' on the command line, meaning we expect
+		// a list of files on stdin.
 		while (scanf("%2047s", temp) == 1)
 			testFilenames.push_back(temp);
 	} else {
@@ -492,8 +494,8 @@ int main(int argc, const char* argv[])
 	coreParameter.gpuCore = glWorking ? gpuCore : GPUCORE_SOFTWARE;
 	coreParameter.graphicsContext = graphicsContext;
 	coreParameter.enableSound = false;
-	coreParameter.mountIso = mountIso ? Path(std::string(mountIso)) : Path();
-	coreParameter.mountRoot = mountRoot ? Path(std::string(mountRoot)) : Path();
+	coreParameter.mountIso = mountIso ? Path(mountIso) : Path();
+	coreParameter.mountRoot = mountRoot ? Path(mountRoot) : Path();
 	coreParameter.startBreak = false;
 	coreParameter.headLess = true;
 	coreParameter.renderScaleFactor = 1;

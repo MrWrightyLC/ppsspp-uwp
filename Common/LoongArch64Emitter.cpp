@@ -15,7 +15,6 @@
 // Official git repository and contact information can be found at
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
-
 #include "ppsspp_config.h"
 #include <algorithm>
 #include <cstring>
@@ -1751,11 +1750,10 @@ void LoongArch64Emitter::SetJumpTarget(FixupBranch &branch, const void *dst) {
 
 	u32 fixup;
 
-	_assert_msg_((dstp & 3) == 0, "Destination should be aligned (no compressed)");
+	_assert_msg_((dstp & 3) == 0, "Destination should be aligned");
 
 	ptrdiff_t distance = dstp - srcp;
-	_assert_msg_((distance & 3) == 0, "Distance should be aligned (no compressed)");
-
+	_assert_msg_((distance & 3) == 0, "Distance should be aligned");
 	switch (branch.type) {
 	case FixupBranchType::B:
 		_assert_msg_(BranchInRange(branch.ptr, dst), "B destination is too far away (%p -> %p)", branch.ptr, dst);
@@ -1817,12 +1815,12 @@ void LoongArch64Emitter::QuickJump(LoongArch64Reg scratchreg, LoongArch64Reg rd,
 	if (!JumpInRange(GetCodePointer(), dst)) {
 		int32_t lower = (int32_t)SignReduce64((int64_t)dst, 18);
 		static_assert(sizeof(intptr_t) <= sizeof(int64_t));
- LI(scratchreg, dst - lower);
+        LI(scratchreg, dst - lower);
 		JIRL(rd, scratchreg, lower);
-	} else if (rd != R_ZERO) {
+	} else if (rd == R_RA) {
 		BL(dst);
 	} else {
- B(dst);
+        B(dst);
     }
 }
 
@@ -1836,7 +1834,7 @@ void LoongArch64Emitter::SetRegToImmediate(LoongArch64Reg rd, uint64_t value) {
 		return;
 	}
 
-	if (svalue <= 0x7fffffffl && svalue >= -0x80000000l) {
+	if (svalue <= 0x7fffffffll && svalue >= -0x80000000ll) {
         // Use lu12i.w/ori to load 32-bits immediate.
 		LU12I_W(rd, (s32)((svalue & 0xffffffff) >> 12));
 		ORI(rd, rd, (s16)(svalue & 0xFFF));

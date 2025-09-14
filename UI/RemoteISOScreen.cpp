@@ -106,7 +106,7 @@ std::string RemoteSubdir() {
 }
 
 bool RemoteISOConnectScreen::FindServer(std::string &resultHost, int &resultPort) {
-	http::Client http;
+	http::Client http(nullptr);
 	Buffer result;
 	int code = 500;
 	bool hadTimeouts = false;
@@ -291,13 +291,16 @@ void RemoteISOScreen::CreateTabs() {
 void RemoteISOScreen::update() {
 	TabbedUIDialogScreenWithGameBackground::update();
 
-	if (!WebServerStopped(WebServerFlags::DISCS)) {
+	frameCount_++;
+
+	if (!WebServerStopped(WebServerFlags::DISCS) && frameCount_ > 60) {
 		auto result = IsServerAllowed(g_Config.iRemoteISOPort);
 		if (result == ServerAllowStatus::NO) {
 			firewallWarning_->SetVisibility(V_VISIBLE);
 		} else if (result == ServerAllowStatus::YES) {
 			firewallWarning_->SetVisibility(V_GONE);
 		}
+		frameCount_ = 0;
 	}
 
 	bool nowRunning = !WebServerStopped(WebServerFlags::DISCS);
@@ -422,6 +425,7 @@ UI::EventReturn RemoteISOScreen::OnChangeRemoteISOSubdir(UI::EventParams &e) {
 }
 
 UI::EventReturn RemoteISOScreen::HandleStartServer(UI::EventParams &e) {
+	frameCount_ = 0;
 	if (!StartWebServer(WebServerFlags::DISCS)) {
 		return EVENT_SKIPPED;
 	}

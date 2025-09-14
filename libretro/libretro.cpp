@@ -1247,6 +1247,42 @@ void retro_init(void)
 
    retro_base_dir /= "PPSSPP";
 
+   // Check if '<system_dir>/PPSSPP/compat.ini' exists, if not we can assume
+   // the user is missing the assets entirely, so let's warn them about it.
+   if (!File::Exists(Path(retro_base_dir / "compat.ini")))
+   {
+      const char* str = "Core system files missing, expect bugs.";
+      unsigned msg_interface_version = 0;
+      environ_cb(RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION, &msg_interface_version);
+
+      if (msg_interface_version >= 1)
+      {
+         retro_message_ext msg = {
+            str,
+            3000,
+            3,
+            RETRO_LOG_WARN,
+            RETRO_MESSAGE_TARGET_ALL,
+            RETRO_MESSAGE_TYPE_NOTIFICATION,
+            -1
+         };
+         environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg);
+      }
+      else
+      {
+         retro_message msg = {
+            str,
+            180
+         };
+         environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE, &msg);
+      }
+
+      // OSD messages should be kept pretty short, but
+      // let's give the user a bit more info in logs.
+      WARN_LOG(Log::System, "Please check the docs for more informations on how to install "
+                            "the PPSSPP assets: https://docs.libretro.com/library/ppsspp/");
+   }
+
    g_Config.currentDirectory = retro_base_dir;
    g_Config.defaultCurrentDirectory = retro_base_dir;
    g_Config.memStickDirectory = retro_save_dir;
@@ -1379,7 +1415,6 @@ namespace Libretro
             default:
             case EmuThreadState::QUIT_REQUESTED:
                emuThreadState = EmuThreadState::STOPPED;
-               ctx->StopThread();
                return;
          }
       }
@@ -1405,8 +1440,9 @@ namespace Libretro
       emuThreadState = EmuThreadState::QUIT_REQUESTED;
 
       // Need to keep eating frames to allow the EmuThread to exit correctly.
-      while (ctx->ThreadFrame())
-         ;
+      ctx->ThreadFrameUntilCondition([]() -> bool {
+         return emuThreadState == EmuThreadState::STOPPED;
+      });
 
       emuThread.join();
       emuThread = std::thread();
@@ -1420,7 +1456,8 @@ namespace Libretro
 
       emuThreadState = EmuThreadState::PAUSE_REQUESTED;
 
-      ctx->ThreadFrame(); // Eat 1 frame
+      // Is this safe?
+      ctx->ThreadFrame(true); // Eat 1 frame
 
       while (emuThreadState != EmuThreadState::PAUSED)
          sleep_ms(1, "libretro-pause-poll");
@@ -1474,7 +1511,7 @@ bool retro_load_game(const struct retro_game_info *game)
 
    CoreParameter coreParam   = {};
    coreParam.enableSound     = true;
-   coreParam.fileToStart     = Path(std::string(game->path));
+   coreParam.fileToStart     = Path(game->path);
    coreParam.startBreak      = false;
    coreParam.headLess        = true;  // really?
    coreParam.graphicsContext = ctx;
@@ -1712,7 +1749,7 @@ void retro_run(void)
       if (emuThreadState != EmuThreadState::RUNNING)
          EmuThreadStart();
 
-      if (!ctx->ThreadFrame())
+      if (!ctx->ThreadFrame(true))
       {
          VsyncSwapIntervalDetect();
          return;
@@ -1898,10 +1935,8 @@ void retro_cheat_set(unsigned index, bool enabled, const char *code) {
    }
 }
 
-int64_t System_GetPropertyInt(SystemProperty prop)
-{
-   switch (prop)
-   {
+int64_t System_GetPropertyInt(SystemProperty prop) {
+   switch (prop) {
       case SYSPROP_AUDIO_SAMPLE_RATE:
          return SAMPLERATE;
 #if PPSSPP_PLATFORM(ANDROID)
@@ -1964,7 +1999,7 @@ void System_Notify(SystemNotification notification) {
    }
 }
 bool System_MakeRequest(SystemRequestType type, int requestId, const std::string &param1, const std::string &param2, int64_t param3, int64_t param4) { return false; }
-void System_PostUIMessage(UIMessage message, const std::string &param) {}
+void System_PostUIMessage(UIMessage message, std::string_view param) {}
 void System_RunOnMainThread(std::function<void()>) {}
 void NativeFrame(GraphicsContext *graphicsContext) {}
 void NativeResized() {}
