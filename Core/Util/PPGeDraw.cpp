@@ -263,7 +263,7 @@ void __PPGeInit() {
 		if (!g_ppge_atlas.IsMetadataLoaded()) {
 			uint8_t *atlas_data = g_VFS.ReadFile("ppge_atlas.meta", &atlas_data_size);
 			if (atlas_data)
-				g_ppge_atlas.Load(atlas_data, atlas_data_size);
+				g_ppge_atlas.LoadMeta(atlas_data, atlas_data_size);
 			delete[] atlas_data;
 		}
 	}
@@ -769,7 +769,7 @@ static bool HasTextDrawer() {
 	if (textDrawer) {
 		textDrawer->SetFontScale(1.0f, 1.0f);
 		textDrawer->SetForcedDPIScale(1.0f);
-		textDrawer->SetFont(g_Config.sFont.c_str(), 18, 0);
+		textDrawer->SetOrCreateFont(FontStyle(FontFamily::SansSerif, 18, FontStyleFlags::Default));
 	}
 	textDrawerInited = true;
 	return textDrawer != nullptr;
@@ -1329,7 +1329,7 @@ void PPGeSetTexture(u32 dataAddr, int width, int height)
 	WriteCmd(GE_CMD_TEXSIZE0, wp2 | (hp2 << 8));
 	WriteCmd(GE_CMD_TEXMAPMODE, 0 | (1 << 8));
 	WriteCmd(GE_CMD_TEXMODE, 0);
-	WriteCmd(GE_CMD_TEXFORMAT, GE_TFMT_8888);  // 4444
+	WriteCmd(GE_CMD_TEXFORMAT, GE_TFMT_8888);
 	WriteCmd(GE_CMD_TEXFILTER, (1 << 8) | 1);   // mag = LINEAR min = LINEAR
 	WriteCmd(GE_CMD_TEXWRAP, (1 << 8) | 1);  // clamp texture wrapping
 	WriteCmd(GE_CMD_TEXFUNC, (0 << 16) | (1 << 8) | 0);  // RGBA texture reads, modulate, no color doubling

@@ -160,7 +160,14 @@ public:
 
 	void BeginFrame(DebugFlags debugFlags) override;
 	void EndFrame() override;
-	void Present(PresentMode presentMode, int vblanks) override;
+	void Present(PresentMode presentMode) override;
+	PresentMode GetCurrentPresentMode() const override {
+		if (currentInterval_ == 1) {
+			return PresentMode::FIFO;
+		} else {
+			return PresentMode::IMMEDIATE;
+		}
+	}
 
 	int GetFrameCount() override { return frameCount_; }
 
@@ -272,6 +279,8 @@ private:
 	D3D_FEATURE_LEVEL featureLevel_;
 	std::string adapterDesc_;
 	std::vector<std::string> deviceList_;
+
+	int currentInterval_ = -1;
 };
 
 D3D11DrawContext::D3D11DrawContext(ComPtr<ID3D11Device> device, ComPtr<ID3D11DeviceContext> deviceContext, ComPtr<ID3D11Device1> device1, ComPtr<ID3D11DeviceContext1> deviceContext1, ComPtr<IDXGISwapChain> swapChain, D3D_FEATURE_LEVEL featureLevel, HWND hWnd, std::vector<std::string> deviceList, int maxInflightFrames)
@@ -288,6 +297,26 @@ D3D11DrawContext::D3D11DrawContext(ComPtr<ID3D11Device> device, ComPtr<ID3D11Dev
 	_assert_(featureLevel_ >= D3D_FEATURE_LEVEL_9_3);
 
 	caps_.coordConvention = CoordConvention::Direct3D11;
+
+	switch (featureLevel_) {
+	case D3D_FEATURE_LEVEL_11_1:
+	case D3D_FEATURE_LEVEL_11_0:
+		caps_.maxTextureSize = 16384;
+		break;
+	case D3D_FEATURE_LEVEL_10_1:
+	case D3D_FEATURE_LEVEL_10_0:
+		caps_.maxTextureSize = 8192;
+		break;
+	case D3D_FEATURE_LEVEL_9_3:
+		caps_.maxTextureSize = 4096;
+		break;
+	case D3D_FEATURE_LEVEL_9_2:
+	case D3D_FEATURE_LEVEL_9_1:
+	default:
+		caps_.maxTextureSize = 2048;
+		break;
+	}
+	caps_.maxClipPlanes = 8;
 
 	// Seems like a fair approximation...
 	caps_.dualSourceBlend = featureLevel_ >= D3D_FEATURE_LEVEL_10_0;
@@ -478,12 +507,12 @@ void D3D11DrawContext::EndFrame() {
 	curPipeline_ = nullptr;
 }
 
-void D3D11DrawContext::Present(PresentMode presentMode, int vblanks) {
+void D3D11DrawContext::Present(PresentMode presentMode) {
 	frameTimeHistory_[frameCount_].queuePresent = time_now_d();
 
 	// Safety for libretro
 	if (swapChain_) {
-		uint32_t interval = vblanks;
+		uint32_t interval = 1;
 		uint32_t flags = 0;
 		if (presentMode != PresentMode::FIFO) {
 			interval = 0;
@@ -492,6 +521,7 @@ void D3D11DrawContext::Present(PresentMode presentMode, int vblanks) {
 #endif
 		}
 		swapChain_->Present(interval, flags);
+		currentInterval_ = interval;
 	}
 
 	curRenderTargetView_.Reset();

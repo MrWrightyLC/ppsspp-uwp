@@ -17,6 +17,7 @@
 #include "Common/System/OSD.h"
 #include "Common/System/NativeApp.h"
 #include "Common/System/Request.h"
+#include "Common/System/Display.h"
 #include "Common/File/FileUtil.h"
 #include "Common/Log.h"
 #include "Common/Log/LogManager.h"
@@ -295,9 +296,6 @@ namespace MainWindow {
 		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIP_MENU, g_Config.bSystemControls ? L"\tF7" : L"");
 		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIP_AUTO);
 		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIP_0);
-		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIPTYPE_MENU);
-		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIPTYPE_COUNT);
-		TranslateMenuItem(menu, ID_OPTIONS_FRAMESKIPTYPE_PRCNT);
 		// Skip frameskipping 1-8..
 		TranslateMenuItem(menu, ID_OPTIONS_TEXTUREFILTERING_MENU);
 		TranslateMenuItem(menu, ID_OPTIONS_TEXTUREFILTERING_AUTO);
@@ -437,26 +435,6 @@ namespace MainWindow {
 		g_OSD.Show(OSDType::MESSAGE_INFO, messageStream.str());
 	}
 
-	static void setFrameSkippingType(int fskipType = -1) {
-		if (fskipType >= 0 && fskipType <= 1) {
-			g_Config.iFrameSkipType = fskipType;
-		} else {
-			g_Config.iFrameSkipType = 0;
-		}
-
-		auto gr = GetI18NCategory(I18NCat::GRAPHICS);
-
-		std::ostringstream messageStream;
-		messageStream << gr->T("Frame Skipping Type") << ":" << " ";
-
-		if (g_Config.iFrameSkipType == 0)
-			messageStream << gr->T("Number of Frames");
-		else
-			messageStream << gr->T("Percent of FPS");
-
-		g_OSD.Show(OSDType::MESSAGE_INFO, messageStream.str());
-	}
-
 	static void RestartApp() {
 		if (System_GetPropertyBool(SYSPROP_DEBUGGER_PRESENT)) {
 			PostMessage(MainWindow::GetHWND(), WM_USER_RESTART_EMUTHREAD, 0, 0);
@@ -533,10 +511,30 @@ namespace MainWindow {
 			UmdSwitchAction(NON_EPHEMERAL_TOKEN);
 			break;
 
-		case ID_EMULATION_ROTATION_H:   g_Config.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL; break;
-		case ID_EMULATION_ROTATION_V:   g_Config.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL; break;
-		case ID_EMULATION_ROTATION_H_R: g_Config.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL180; break;
-		case ID_EMULATION_ROTATION_V_R: g_Config.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL180; break;
+		case ID_EMULATION_ROTATION_H:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL;
+			break;
+		}
+		case ID_EMULATION_ROTATION_V:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL;
+			break;
+		}
+		case ID_EMULATION_ROTATION_H_R:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL180;
+			break;
+		}
+		case ID_EMULATION_ROTATION_V_R:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL180;
+			break;
+		}
 
 		case ID_EMULATION_CHEATS:
 			g_Config.bEnableCheats = !g_Config.bEnableCheats;
@@ -759,9 +757,6 @@ namespace MainWindow {
 		case ID_OPTIONS_FRAMESKIP_7:    setFrameSkipping(FRAMESKIP_7); break;
 		case ID_OPTIONS_FRAMESKIP_8:    setFrameSkipping(FRAMESKIP_MAX); break;
 
-		case ID_OPTIONS_FRAMESKIPTYPE_COUNT:    setFrameSkippingType(FRAMESKIPTYPE_COUNT); break;
-		case ID_OPTIONS_FRAMESKIPTYPE_PRCNT:    setFrameSkippingType(FRAMESKIPTYPE_PRCNT); break;
-
 		case ID_FILE_EXIT:
 			if (MainWindow::ConfirmAction(hWnd, false)) {
 				DestroyWindow(hWnd);
@@ -898,8 +893,18 @@ namespace MainWindow {
 
 		case ID_OPTIONS_SMART2DTEXTUREFILTERING: g_Config.bSmart2DTexFiltering = !g_Config.bSmart2DTexFiltering; break;
 
-		case ID_OPTIONS_BUFLINEARFILTER:  g_Config.iDisplayFilter = SCALE_LINEAR; break;
-		case ID_OPTIONS_BUFNEARESTFILTER: g_Config.iDisplayFilter = SCALE_NEAREST; break;
+		case ID_OPTIONS_BUFLINEARFILTER:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iDisplayFilter = SCALE_LINEAR;
+			break;
+		}
+		case ID_OPTIONS_BUFNEARESTFILTER:
+		{
+			DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			displayLayoutConfig.iDisplayFilter = SCALE_NEAREST;
+			break;
+		}
 
 		case ID_OPTIONS_TOPMOST:
 			g_Config.bTopMost = !g_Config.bTopMost;
@@ -1027,8 +1032,6 @@ namespace MainWindow {
 		CHECKITEM(ID_DEBUG_BREAKONLOAD, !g_Config.bAutoRun);
 		CHECKITEM(ID_OPTIONS_FRAMESKIP_AUTO, g_Config.bAutoFrameSkip);
 		CHECKITEM(ID_OPTIONS_FRAMESKIP, g_Config.iFrameSkip != FRAMESKIP_OFF);
-		CHECKITEM(ID_OPTIONS_FRAMESKIPTYPE_COUNT, g_Config.iFrameSkipType == FRAMESKIPTYPE_COUNT);
-		CHECKITEM(ID_OPTIONS_FRAMESKIPTYPE_PRCNT, g_Config.iFrameSkipType == FRAMESKIPTYPE_PRCNT);
 		CHECKITEM(ID_OPTIONS_VSYNC, g_Config.bVSync);
 		CHECKITEM(ID_OPTIONS_TOPMOST, g_Config.bTopMost);
 		CHECKITEM(ID_OPTIONS_PAUSE_FOCUS, g_Config.bPauseOnLostFocus);
@@ -1049,14 +1052,17 @@ namespace MainWindow {
 			ID_EMULATION_ROTATION_H_R,
 			ID_EMULATION_ROTATION_V_R
 		};
-		if (g_Config.iInternalScreenRotation < ROTATION_LOCKED_HORIZONTAL)
-			g_Config.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL;
 
-		else if (g_Config.iInternalScreenRotation > ROTATION_LOCKED_VERTICAL180)
-			g_Config.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL180;
+		DisplayLayoutConfig &displayLayoutConfig = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+
+		if (displayLayoutConfig.iInternalScreenRotation < ROTATION_LOCKED_HORIZONTAL)
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_HORIZONTAL;
+
+		else if (displayLayoutConfig.iInternalScreenRotation > ROTATION_LOCKED_VERTICAL180)
+			displayLayoutConfig.iInternalScreenRotation = ROTATION_LOCKED_VERTICAL180;
 
 		for (int i = 0; i < ARRAY_SIZE(displayrotationitems); i++) {
-			CheckMenuItem(menu, displayrotationitems[i], MF_BYCOMMAND | ((i + 1) == g_Config.iInternalScreenRotation ? MF_CHECKED : MF_UNCHECKED));
+			CheckMenuItem(menu, displayrotationitems[i], MF_BYCOMMAND | ((i + 1) == displayLayoutConfig.iInternalScreenRotation ? MF_CHECKED : MF_UNCHECKED));
 		}
 
 		static const int zoomitems[11] = {
@@ -1098,8 +1104,8 @@ namespace MainWindow {
 		RECT rc;
 		GetClientRect(GetHWND(), &rc);
 
-		int checkW = g_Config.IsPortrait() ? 272 : 480;
-		int checkH = g_Config.IsPortrait() ? 480 : 272;
+		int checkW = displayLayoutConfig.InternalRotationIsPortrait() ? 272 : 480;
+		int checkH = displayLayoutConfig.InternalRotationIsPortrait() ? 480 : 272;
 
 		for (int i = 0; i < ARRAY_SIZE(windowSizeItems); i++) {
 			bool check = (i + 1) * checkW == rc.right - rc.left || (i + 1) * checkH == rc.bottom - rc.top;
@@ -1168,14 +1174,14 @@ namespace MainWindow {
 			ID_OPTIONS_BUFLINEARFILTER,
 			ID_OPTIONS_BUFNEARESTFILTER,
 		};
-		if (g_Config.iDisplayFilter < SCALE_LINEAR)
-			g_Config.iDisplayFilter = SCALE_LINEAR;
+		if (displayLayoutConfig.iDisplayFilter < SCALE_LINEAR)
+			displayLayoutConfig.iDisplayFilter = SCALE_LINEAR;
 
-		else if (g_Config.iDisplayFilter > SCALE_NEAREST)
-			g_Config.iDisplayFilter = SCALE_NEAREST;
+		else if (displayLayoutConfig.iDisplayFilter > SCALE_NEAREST)
+			displayLayoutConfig.iDisplayFilter = SCALE_NEAREST;
 
 		for (int i = 0; i < ARRAY_SIZE(bufferfilteritems); i++) {
-			CheckMenuItem(menu, bufferfilteritems[i], MF_BYCOMMAND | ((i + 1) == g_Config.iDisplayFilter ? MF_CHECKED : MF_UNCHECKED));
+			CheckMenuItem(menu, bufferfilteritems[i], MF_BYCOMMAND | ((i + 1) == displayLayoutConfig.iDisplayFilter ? MF_CHECKED : MF_UNCHECKED));
 		}
 
 		static const int frameskipping[] = {
@@ -1190,11 +1196,6 @@ namespace MainWindow {
 			ID_OPTIONS_FRAMESKIP_8,
 		};
 
-		static const int frameskippingType[] = {
-			ID_OPTIONS_FRAMESKIPTYPE_COUNT,
-			ID_OPTIONS_FRAMESKIPTYPE_PRCNT,
-		};
-
 		if (g_Config.iFrameSkip < FRAMESKIP_OFF)
 			g_Config.iFrameSkip = FRAMESKIP_OFF;
 
@@ -1203,10 +1204,6 @@ namespace MainWindow {
 
 		for (int i = 0; i < ARRAY_SIZE(frameskipping); i++) {
 			CheckMenuItem(menu, frameskipping[i], MF_BYCOMMAND | ((i == g_Config.iFrameSkip) ? MF_CHECKED : MF_UNCHECKED));
-		}
-
-		for (int i = 0; i < ARRAY_SIZE(frameskippingType); i++) {
-			CheckMenuItem(menu, frameskippingType[i], MF_BYCOMMAND | ((i == g_Config.iFrameSkipType) ? MF_CHECKED : MF_UNCHECKED));
 		}
 
 		static const int savestateSlot[] = {

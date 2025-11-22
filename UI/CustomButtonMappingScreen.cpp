@@ -21,6 +21,8 @@
 #include "Common/UI/Context.h"
 #include "Common/UI/View.h"
 #include "Common/UI/ViewGroup.h"
+#include "Common/UI/ScrollView.h"
+#include "Common/UI/PopupScreens.h"
 
 #include "Common/Data/Text/I18n.h"
 #include "Common/Data/Color/RGBAUtil.h"
@@ -31,7 +33,7 @@
 
 #include "UI/CustomButtonMappingScreen.h"
 
-class ButtonShapeScreen : public PopupScreen {
+class ButtonShapeScreen : public UI::PopupScreen {
 public:
 	ButtonShapeScreen(std::string_view title, int *setting) : PopupScreen(title), setting_(setting) {}
 
@@ -47,7 +49,6 @@ public:
 			c->OnClick.Add([=](UI::EventParams &e) {
 				*setting_ = i;
 				TriggerFinish(DR_OK);
-				return UI::EVENT_DONE;
 			});
 		}
 
@@ -61,7 +62,7 @@ private:
 	int *setting_;
 };
 
-class ButtonIconScreen : public PopupScreen {
+class ButtonIconScreen : public UI::PopupScreen {
 public:
 	ButtonIconScreen(std::string_view title, int *setting) : PopupScreen(title), setting_(setting) {}
 
@@ -77,7 +78,6 @@ public:
 			c->OnClick.Add([=](UI::EventParams &e) {
 				*setting_ = i;
 				TriggerFinish(DR_OK);
-				return UI::EVENT_DONE;
 			});
 		}
 
@@ -94,7 +94,7 @@ private:
 class ButtonPreview : public UI::View {
 public:
 	ButtonPreview(ImageID bgImg, ImageID img, float rotationIcon, bool flipShape, float rotationShape, int x, int y)
-		: View(new UI::AnchorLayoutParams(x, y, UI::NONE, UI::NONE, true)), bgImg_(bgImg), img_(img), rotI_(rotationIcon),
+		: View(new UI::AnchorLayoutParams(x, y, UI::NONE, UI::NONE, UI::Centering::Both)), bgImg_(bgImg), img_(img), rotI_(rotationIcon),
 		flipS_(flipShape), rotS_(rotationShape), x_(x), y_(y) {}
 
 	void Draw(UIContext &dc) override {
@@ -116,23 +116,30 @@ private:
 	ImageID img_;
 };
 
+std::string_view CustomButtonMappingScreen::GetTitle() const {
+	auto co = GetI18NCategory(I18NCat::CONTROLS);
+	return co->T("Custom touch button setup");
+}
+
 void CustomButtonMappingScreen::CreateViews() {
 	using namespace UI;
 	using namespace CustomKeyData;
 	auto co = GetI18NCategory(I18NCat::CONTROLS);
 	auto mc = GetI18NCategory(I18NCat::MAPPABLECONTROLS);
 	root_ = new LinearLayout(ORIENT_VERTICAL);
-	root_->Add(new ItemHeader(co->T("Custom Key Setting")));
+	root_->Add(new ItemHeader(GetTitle()));
 	LinearLayout *root__ = new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(1.0));
 	root_->Add(root__);
 	LinearLayout *leftColumn = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(120, FILL_PARENT));
 	auto di = GetI18NCategory(I18NCat::DIALOG);
 
-	ConfigCustomButton* cfg = nullptr;
-	bool* show = nullptr;
+	TouchControlConfig &touch = g_Config.GetTouchControlsConfig(deviceOrientation_);
+
+	ConfigCustomButton *cfg = nullptr;
+	bool *show = nullptr;
 	memset(array, 0, sizeof(array));
 	cfg = &g_Config.CustomButton[id_];
-	show = &g_Config.touchCustom[id_].show;
+	show = &touch.touchCustom[id_].show;
 	for (int i = 0; i < ARRAY_SIZE(g_customKeyList); i++)
 		array[i] = (0x01 == ((g_Config.CustomButton[id_].key >> i) & 0x01));
 
@@ -140,13 +147,13 @@ void CustomButtonMappingScreen::CreateViews() {
 			customKeyImages[cfg->image].i, customKeyImages[cfg->image].r, customKeyShapes[cfg->shape].f, customKeyShapes[cfg->shape].r, 62, 82));
 
 	root__->Add(leftColumn);
-	rightScroll_ = new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 1.0f));
+	ScrollView *rightScroll = new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT, 1.0f));
 	leftColumn->Add(new Spacer(new LinearLayoutParams(1.0f)));
 	leftColumn->Add(new Choice(di->T("Back")))->OnClick.Handle<UIScreen>(this, &UIScreen::OnBack);
-	root__->Add(rightScroll_);
+	root__->Add(rightScroll);
 
 	LinearLayout *vertLayout = new LinearLayout(ORIENT_VERTICAL);
-	rightScroll_->Add(vertLayout);
+	rightScroll->Add(vertLayout);
 	
 	vertLayout->Add(new ItemHeader(co->T("Button style")));
 	vertLayout->Add(new CheckBox(show, co->T("Visible")));
@@ -159,7 +166,6 @@ void CustomButtonMappingScreen::CreateViews() {
 			iconScreen->SetPopupOrigin(e.v);
 
 		screenManager()->push(iconScreen);
-		return UI::EVENT_DONE;
 	});
 
 	Choice *shape = vertLayout->Add(new Choice(co->T("Shape")));
@@ -170,7 +176,6 @@ void CustomButtonMappingScreen::CreateViews() {
 			shape->SetPopupOrigin(e.v);
 
 		screenManager()->push(shape);
-		return UI::EVENT_DONE;
 	});
 
 	vertLayout->Add(new ItemHeader(co->T("Button Binding")));
@@ -219,7 +224,7 @@ static uint64_t arrayToInt(const bool ary[ARRAY_SIZE(CustomKeyData::g_customKeyL
 }
 
 void CustomButtonMappingScreen::saveArray() {
-	if (id_ >= 0 && id_ < Config::CUSTOM_BUTTON_COUNT) {
+	if (id_ >= 0 && id_ < TouchControlConfig::CUSTOM_BUTTON_COUNT) {
 		g_Config.CustomButton[id_].key = arrayToInt(array);
 	}
 }
@@ -234,7 +239,6 @@ void CustomButtonMappingScreen::onFinish(DialogResult result) {
 	g_Config.Save("CustomButtonMappingScreen::onFinish");
 }
 
-UI::EventReturn CustomButtonMappingScreen::ChoiceEventHandler::onChoiceClick(UI::EventParams &e){
+void CustomButtonMappingScreen::ChoiceEventHandler::onChoiceClick(UI::EventParams &e){
 	checkbox_->Toggle();
-	return UI::EVENT_DONE;
 };

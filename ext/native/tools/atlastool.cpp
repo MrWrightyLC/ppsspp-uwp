@@ -33,9 +33,15 @@
 #include "Common/Render/TextureAtlas.h"
 #include "Common/Data/Encoding/Utf8.h"
 #include "Common/StringUtils.h"
+#include "Common/Common.h"
 #include "Common/CommonTypes.h"
 #include "Common/Data/Format/ZIMSave.h"
 #include "kanjifilter.h"
+
+
+constexpr int supersample = 16;
+constexpr int distmult = 64 * 3;  // this is "one pixel in the final version equals 64 difference". reduce this number to increase the "blur" radius, increase it to make things "sharper"
+constexpr int maxsearch = (128 * supersample + distmult - 1) / distmult;
 
 // extracted only JIS Kanji on the CJK Unified Ideographs of UCS2. Cannot reading BlockAllocator. (texture size over)
 //#define USE_KANJI KANJI_STANDARD | KANJI_RARELY_USED | KANJI_LEVEL4
@@ -50,18 +56,11 @@
 
 using namespace std;
 
-static const char * const effect_str[5] = {
-	"copy", "r2a", "r2i", "pre", "p2a",
+struct ImageDesc {
+	std::string name;
+	std::string fileName;
+	int result_index;
 };
-
-static Effect GetEffect(const char *text) {
-	for (int i = 0; i < 5; i++) {
-		if (!strcmp(text, effect_str[i])) {
-			return (Effect)i;
-		}
-	}
-	return Effect::FX_INVALID;
-}
 
 struct CharRange : public AtlasCharRange {
 	std::set<u16> filter;
@@ -221,8 +220,8 @@ void RasterizeFonts(const FontReferenceList &fontRefs, vector<CharRange> &ranges
 				missing_chars++;
 			}
 
-			Image img;
 			if (!foundMatch || filtered || 0 != FT_Load_Char(font, kar, FT_LOAD_RENDER | FT_LOAD_MONOCHROME)) {
+				Image img;
 				img.resize(1, 1);
 				Data dat;
 
@@ -237,10 +236,11 @@ void RasterizeFonts(const FontReferenceList &fontRefs, vector<CharRange> &ranges
 				dat.wx = 0;
 				dat.voffset = 0;
 				dat.charNum = kar;
-				dat.effect = (int)Effect::FX_RED_TO_ALPHA_SOLID_WHITE;
-				bucket->AddItem(img, dat);
+				dat.redToWhiteAlpha = true;
+				bucket->AddItem(std::move(img), dat);
 				continue;
 			}
+			Image img;
 
 			// printf("%dx%d %p\n", font->glyph->bitmap.width, font->glyph->bitmap.rows, font->glyph->bitmap.buffer);
 			const int bord = (128 + distmult - 1) / distmult + 1;
@@ -288,14 +288,16 @@ void RasterizeFonts(const FontReferenceList &fontRefs, vector<CharRange> &ranges
 			dat.sy = 0;
 			dat.ex = (int)img.width();
 			dat.ey = (int)img.height();
+			dat.w = dat.ex;
+			dat.h = dat.ey;
 			dat.ox = (float)font->glyph->metrics.horiBearingX / 64 / supersample - bord;
 			dat.oy = -(float)font->glyph->metrics.horiBearingY / 64 / supersample - bord;
 			dat.voffset = vertOffset;
 			dat.wx = (float)font->glyph->metrics.horiAdvance / 64 / supersample;
 			dat.charNum = kar;
 
-			dat.effect = (int)Effect::FX_RED_TO_ALPHA_SOLID_WHITE;
-			bucket->AddItem(img, dat);
+			dat.redToWhiteAlpha = true;
+			bucket->AddItem(std::move(img), dat);
 		}
 	}
 
@@ -335,61 +337,6 @@ struct FontDesc {
 		}
 
 		height = metrics_height / 64.0f / supersample;
-	}
-
-	void OutputSelf(FILE *fil, float tw, float th, const vector<Data> &results) const {
-		// Dump results as chardata.
-		fprintf(fil, "const AtlasChar font_%s_chardata[] = {\n", name.c_str());
-		int start_index = 0;
-		for (size_t r = 0; r < ranges.size(); r++) {
-			fprintf(fil, "// RANGE: 0x%x - 0x%x, start %d, result %d\n", ranges[r].start, ranges[r].end, start_index, ranges[r].result_index);
-			for (int i = ranges[r].start; i < ranges[r].end; i++) {
-				int idx = i - ranges[r].start + ranges[r].result_index;
-				fprintf(fil, "    {%ff, %ff, %ff, %ff, %1.4ff, %1.4ff, %1.4ff, %i, %i},  // %04x\n",
-					/*results[i].id, */
-					results[idx].sx / tw,
-					results[idx].sy / th,
-					results[idx].ex / tw,
-					results[idx].ey / th,
-					results[idx].ox,
-					results[idx].oy + results[idx].voffset,
-					results[idx].wx,
-					results[idx].ex - results[idx].sx, results[idx].ey - results[idx].sy,
-					results[idx].charNum);
-			}
-			start_index += ranges[r].end - ranges[r].start;
-		}
-		fprintf(fil, "};\n");
-
-		fprintf(fil, "const AtlasCharRange font_%s_ranges[] = {\n", name.c_str());
-		// Write range information.
-		start_index = 0;
-		for (size_t r = 0; r < ranges.size(); r++) {
-			int first_char_id = ranges[r].start;
-			int last_char_id = ranges[r].end;
-			fprintf(fil, "  { %i, %i, %i },\n", first_char_id, last_char_id, start_index);
-			start_index += last_char_id - first_char_id;
-		}
-		fprintf(fil, "};\n");
-
-		fprintf(fil, "const AtlasFont font_%s = {\n", name.c_str());
-		fprintf(fil, "  %ff, // padding\n", height - ascend - descend);
-		fprintf(fil, "  %ff, // height\n", ascend + descend);
-		fprintf(fil, "  %ff, // ascend\n", ascend);
-		fprintf(fil, "  %ff, // distslope\n", distmult / 256.0);
-		fprintf(fil, "  font_%s_chardata,\n", name.c_str());
-		fprintf(fil, "  font_%s_ranges,\n", name.c_str());
-		fprintf(fil, "  %i,\n", (int)ranges.size());
-		fprintf(fil, "  \"%s\", // name\n", name.c_str());
-		fprintf(fil, "};\n");
-	}
-
-	void OutputIndex(FILE *fil) const {
-		fprintf(fil, "  &font_%s,\n", name.c_str());
-	}
-
-	void OutputHeader(FILE *fil, int index) const {
-		fprintf(fil, "#define %s %i\n", name.c_str(), index);
 	}
 
 	AtlasFontHeader GetHeader() const {
@@ -612,7 +559,6 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 
 	int global_id = 0;
 
-
 	std::string image_name = string(atlas_name) + "_atlas.zim";
 	std::string meta_name = string(atlas_name) + "_atlas.meta";
 
@@ -657,12 +603,10 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 			char imagefile[256];
 			char effectname[256];
 			sscanf(rest, "%255s %255s %255s", imagename, imagefile, effectname);
-			Effect effect = GetEffect(effectname);
-			printf("Image %s with effect %s (%i)\n", imagefile, effectname, (int)effect);
+			printf("Image %s\n", imagefile);
 			ImageDesc desc;
 			desc.fileName = imagefile;
 			desc.name = imagename;
-			desc.effect = effect;
 			desc.result_index = 0;
 			images.push_back(desc);
 		} else {
@@ -675,15 +619,21 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 
 	// Script fully read, now read images and rasterize the fonts.
 	for (auto &image : images) {
-		image.result_index = (int)bucket.items.size();
-		if (!LoadImage(image.fileName.c_str(), image.effect, &bucket, global_id)) {
+		image.result_index = (int)bucket.data.size();
+
+		Image img;
+		bool success = img.LoadPNG(image.fileName.c_str());
+		if (!success) {
 			fprintf(stderr, "Failed to load image %s\n", image.fileName.c_str());
+			continue;
 		}
+		bucket.AddImage(std::move(img), global_id);
+		global_id++;
 	}
 
 	for (auto it = fontRefs.begin(), end = fontRefs.end(); it != end; ++it) {
 		FontDesc fnt;
-		fnt.first_char_id = (int)bucket.items.size();
+		fnt.first_char_id = (int)bucket.data.size();
 
 		vector<CharRange> finalRanges;
 		float metrics_height;
@@ -702,9 +652,11 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 	// Place the subimages onto the main texture. Also writes to png.
 	Image dest;
 	// Place things on the bitmap.
-	printf("Resolving...\n");
 
-	std::vector<Data> results = bucket.Resolve(image_width, dest);
+	printf("Packing...\n");
+	bucket.Pack(image_width);
+	printf("Resolving...\n");
+	std::vector<Data> results = bucket.Resolve(&dest);
 	if (highcolor) {
 		printf("Writing .ZIM %ix%i RGBA8888...\n", dest.width(), dest.height());
 		dest.SaveZIM(image_name.c_str(), ZIM_RGBA8888 | ZIM_ZSTD_COMPRESSED);
@@ -717,11 +669,9 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 	printf("Writing .PNG %s\n", (image_name + ".png").c_str());
 	dest.SavePNG((image_name + ".png").c_str());
 
-	printf("Done. Outputting source and meta files %s_atlas.cpp/h/meta.\n", out_prefix.c_str());
-	// Sort items by ID.
-	sort(results.begin(), results.end());
+	printf("Done. Outputting meta file %s_atlas.meta.\n", out_prefix.c_str());
 
-	// Save all the metadata.
+	// Save all the metadata into a packed file.
 	{
 		FILE *meta = fopen(meta_name.c_str(), "wb");
 		AtlasHeader header{};
@@ -731,11 +681,11 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 		header.numImages = (int)images.size();
 		fwrite(&header, 1, sizeof(header), meta);
 		// For each image
-		AtlasImage *atalas_images = new AtlasImage[images.size()];
+		AtlasImage *atlas_images = new AtlasImage[images.size()];
 		for (int i = 0; i < (int)images.size(); i++) {
-			atalas_images[i] = images[i].ToAtlasImage((float)dest.width(), (float)dest.height(), results);
+			atlas_images[i] = ToAtlasImage(images[i].result_index, images[i].name, (float)dest.width(), (float)dest.height(), results);
 		}
-		WriteCompressed(atalas_images, sizeof(AtlasImage), images.size(), meta);
+		WriteCompressed(atlas_images, sizeof(AtlasImage), images.size(), meta);
 		// For each font
 		for (int i = 0; i < (int)fonts.size(); i++) {
 			auto &font = fonts[i];
@@ -749,69 +699,6 @@ int GenerateFromScript(const char *script_file, const char *atlas_name, bool hig
 		}
 		fclose(meta);
 	}
-
-	FILE *cpp_file = fopen((out_prefix + "_atlas.cpp").c_str(), "wb");
-	fprintf(cpp_file, "// C++ generated by atlastool from %s (hrydgard@gmail.com)\n\n", script_file);
-	fprintf(cpp_file, "#include \"%s\"\n\n", (out_prefix + "_atlas.h").c_str());
-	for (int i = 0; i < (int)fonts.size(); i++) {
-		FontDesc &xfont = fonts[i];
-		xfont.ComputeHeight(results, distmult);
-		xfont.OutputSelf(cpp_file, (float)dest.width(), (float)dest.height(), results);
-	}
-
-	if (fonts.size()) {
-		fprintf(cpp_file, "const AtlasFont *%s_fonts[%i] = {\n", atlas_name, (int)fonts.size());
-		for (int i = 0; i < (int)fonts.size(); i++) {
-			fonts[i].OutputIndex(cpp_file);
-		}
-		fprintf(cpp_file, "};\n");
-	}
-
-	if (images.size()) {
-		fprintf(cpp_file, "const AtlasImage %s_images[%i] = {\n", atlas_name, (int)images.size());
-		for (int i = 0; i < (int)images.size(); i++) {
-			images[i].OutputSelf(cpp_file, (float)dest.width(), (float)dest.height(), results);
-		}
-		fprintf(cpp_file, "};\n");
-	}
-
-	fprintf(cpp_file, "const Atlas %s_atlas = {\n", atlas_name);
-	fprintf(cpp_file, "  \"%s\",\n", image_name.c_str());
-	if (fonts.size()) {
-		fprintf(cpp_file, "  %s_fonts, %i,\n", atlas_name, (int)fonts.size());
-	} else {
-		fprintf(cpp_file, "  0, 0,\n");
-	}
-	if (images.size()) {
-		fprintf(cpp_file, "  %s_images, %i,\n", atlas_name, (int)images.size());
-	} else {
-		fprintf(cpp_file, "  0, 0,\n");
-	}
-	fprintf(cpp_file, "};\n");
-	// Should output a list pointing to all the fonts as well.
-	fclose(cpp_file);
-
-	FILE *h_file = fopen((out_prefix + "_atlas.h").c_str(), "wb");
-	fprintf(h_file, "// Header generated by atlastool from %s (hrydgard@gmail.com)\n\n", script_file);
-	fprintf(h_file, "#pragma once\n");
-	fprintf(h_file, "#include \"gfx/texture_atlas.h\"\n\n");
-	if (fonts.size()) {
-		fprintf(h_file, "// FONTS_%s\n", atlas_name);
-		for (int i = 0; i < (int)fonts.size(); i++) {
-			fonts[i].OutputHeader(h_file, i);
-		}
-		fprintf(h_file, "\n\n");
-	}
-	if (images.size()) {
-		fprintf(h_file, "// IMAGES_%s\n", atlas_name);
-		for (int i = 0; i < (int)images.size(); i++) {
-			images[i].OutputHeader(h_file, i);
-		}
-		fprintf(h_file, "\n\n");
-	}
-	fprintf(h_file, "extern const Atlas %s_atlas;\n", atlas_name);
-	fprintf(h_file, "extern const AtlasImage %s_images[%i];\n", atlas_name, (int)images.size());
-	fclose(h_file);
 	return 0;
 }
 

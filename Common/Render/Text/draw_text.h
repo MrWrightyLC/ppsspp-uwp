@@ -1,6 +1,6 @@
 // draw_text
 
-// Uses system fonts to draw text. 
+// Uses system fonts to draw text.
 // Platform support will be added over time, initially just Win32.
 
 // Caches strings in individual textures. Might later combine them into a big one
@@ -16,6 +16,7 @@
 
 #include "Common/Data/Text/WrapText.h"
 #include "Common/Render/DrawBuffer.h"
+#include "Common/Render/Text/Font.h"
 
 namespace Draw {
 	class DrawContext;
@@ -45,8 +46,8 @@ public:
 	virtual ~TextDrawer() = default;
 
 	virtual bool IsReady() const { return true; }
-	virtual uint32_t SetFont(const char *fontName, int size, int flags) = 0;
-	virtual void SetFont(uint32_t fontHandle) = 0;  // Shortcut once you've set the font once.
+	virtual void SetOrCreateFont(const FontStyle &style) = 0;
+
 	void SetFontScale(float xscale, float yscale);
 	void MeasureString(std::string_view str, float *w, float *h);
 	void MeasureStringRect(std::string_view str, const Bounds &bounds, float *w, float *h, int align = ALIGN_TOPLEFT);
@@ -85,17 +86,34 @@ protected:
 
 	void WrapString(std::string &out, std::string_view str, float maxWidth, int flags);
 
-	struct CacheKey {
-		bool operator < (const CacheKey &other) const {
-			if (fontHash < other.fontHash)
-				return true;
-			if (fontHash > other.fontHash)
-				return false;
-			return text < other.text;
-		}
-		std::string text;
-		uint32_t fontHash;
-	};
+	// v has the 8-bit alpha.
+	static u16 AlphaToPremul4444(u32 v) {
+		v = (v >> 4) & 0x0F;
+		v |= v << 4;
+		v |= v << 8;
+		return v;
+	}
+	static u32 AlphaToPremul8888(u32 v) {
+		v |= v << 8;
+		v |= v << 16;
+		return v;
+	}
+	static u32 RGBAToPremul8888(u32 v) {
+		u32 a = (v >> 24) & 0xFF;
+		if (a == 0xFF)
+			return v;
+		if (a == 0)
+			return 0;
+		u32 r = (v >> 16) & 0xFF;
+		u32 g = (v >> 8) & 0xFF;
+		u32 b = v & 0xFF;
+		r = (r * a + 127) / 255;
+		g = (g * a + 127) / 255;
+		b = (b * a + 127) / 255;
+		return (a << 24) | (r << 16) | (g << 8) | b;
+	}
+
+	typedef std::pair<std::string, FontStyle> CacheKeyType;
 
 	Draw::DrawContext *draw_;
 
@@ -104,11 +122,10 @@ protected:
 	float fontScaleY_ = 1.0f;
 	float dpiScale_ = 1.0f;
 	bool ignoreGlobalDpi_ = false;
+	FontStyle fontStyle_{};
 
-	uint32_t fontHash_ = 0;
-
-	std::map<CacheKey, std::unique_ptr<TextStringEntry>> cache_;
-	std::map<CacheKey, std::unique_ptr<TextMeasureEntry>> sizeCache_;
+	std::map<CacheKeyType, std::unique_ptr<TextStringEntry>> cache_;
+	std::map<CacheKeyType, std::unique_ptr<TextMeasureEntry>> sizeCache_;
 };
 
 class TextDrawerWordWrapper : public WordWrapper {
@@ -121,3 +138,13 @@ protected:
 
 	TextDrawer *drawer_;
 };
+
+// The backends can use this to query the filenames of the fonts.
+// Some backends want to just load all the fonts, just pass all.
+// Note that the ttf file extension is included in the output.
+std::vector<std::string> GetAllFontFilenames();
+std::string GetFilenameForFontStyle(const FontStyle &font);
+std::string GetFontNameForFontStyle(const FontStyle &font, FontStyleFlags *outFlags);
+
+// Some languages use an override font, set via ini file.
+void SetFontNameOverride(FontFamily family, std::string_view overrideFont);

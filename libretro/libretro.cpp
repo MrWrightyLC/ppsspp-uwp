@@ -733,15 +733,6 @@ static void check_variables(CoreParameter &coreParam)
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
       g_Config.iFrameSkip = atoi(var.value);
 
-   var.key = "ppsspp_frameskiptype";
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-   {
-      if (!strcmp(var.value, "Number of frames"))
-         g_Config.iFrameSkipType = 0;
-      else if (!strcmp(var.value, "Percent of FPS"))
-         g_Config.iFrameSkipType = 1;
-   }
-
    var.key = "ppsspp_auto_frameskip";
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
@@ -1148,7 +1139,8 @@ static void check_variables(CoreParameter &coreParam)
    {
       if (gpu)
       {
-         gpu->NotifyRenderResized();
+         const DisplayLayoutConfig &config = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+         gpu->NotifyRenderResized(config);
       }
    }
 
@@ -1368,8 +1360,10 @@ namespace Libretro
          ctx->GetDrawContext()->BeginFrame(Draw::DebugFlags::NONE);
       }
 
-      if (gpu)
-         gpu->BeginHostFrame();
+      if (gpu) {
+         const DisplayLayoutConfig &config = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+         gpu->BeginHostFrame(config);
+      }
 
       PSP_RunLoopWhileState();
       switch (coreState) {
@@ -1388,7 +1382,7 @@ namespace Libretro
 
       if (ctx->GetDrawContext()) {
          ctx->GetDrawContext()->EndFrame();
-         ctx->GetDrawContext()->Present(Draw::PresentMode::FIFO, 1);
+         ctx->GetDrawContext()->Present(Draw::PresentMode::FIFO);
       }
    }
 
@@ -1702,6 +1696,9 @@ void retro_run(void)
          // shouldn't happen.
          _dbg_assert_(false);
          return;
+      case BootState::Complete:
+         // done, continue.
+         break;
       }
 
       // BootState is BootState::Complete.
@@ -2042,7 +2039,10 @@ void System_AudioClear() {}
 std::vector<std::string> System_GetCameraDeviceList() { return std::vector<std::string>(); }
 bool System_AudioRecordingIsAvailable() { return false; }
 bool System_AudioRecordingState() { return false; }
-
+#elif PPSSPP_PLATFORM(MAC)
+std::vector<std::string> __mac_getDeviceList() { return std::vector<std::string>(); }
+int __mac_startCapture(int width, int height) { return 0; }
+int __mac_stopCapture() { return 0; }
 #endif
 
 // TODO: To avoid having to define these here, these should probably be turned into system "requests".

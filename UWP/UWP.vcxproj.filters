@@ -198,6 +198,12 @@
     <Image Include="..\Assets\*.png">
       <Filter>Content</Filter>
     </Image>
+    <Image Include="..\Assets\ui_images\*.png">
+      <Filter>Content/ui_images</Filter>
+    </Image>
+    <Image Include="..\Assets\ui_images\*.svg">
+      <Filter>Content/ui_images</Filter>
+    </Image>
     <None Include="..\Assets\compat.ini">
       <Filter>Content</Filter>
     </None>
@@ -217,9 +223,6 @@
       <Filter>Content</Filter>
     </None>
     <None Include="..\Assets\ppge_atlas.zim">
-      <Filter>Content</Filter>
-    </None>
-    <None Include="..\Assets\ui_atlas.zim">
       <Filter>Content</Filter>
     </None>
     <None Include="PPSSPP_UWP_TemporaryKey.pfx" />
@@ -287,7 +290,19 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Font Include="..\Assets\Roboto-Condensed.ttf">
+    <Font Include="..\Assets\Roboto_Condensed-Regular.ttf">
+      <Filter>Content</Filter>
+    </Font>
+    <Font Include="..\Assets\Roboto_Condensed-Bold.ttf">
+      <Filter>Content</Filter>
+    </Font>
+    <Font Include="..\Assets\Roboto_Condensed-Light.ttf">
+      <Filter>Content</Filter>
+    </Font>
+    <Font Include="..\Assets\Roboto_Condensed-Italic.ttf">
+      <Filter>Content</Filter>
+    </Font>
+    <Font Include="..\Assets\Inconsolata-Regular.ttf">
       <Filter>Content</Filter>
     </Font>
   </ItemGroup>

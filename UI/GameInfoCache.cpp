@@ -40,6 +40,7 @@
 #include "Core/ELF/PBPReader.h"
 #include "Core/SaveState.h"
 #include "Core/System.h"
+#include "Core/Util/GameDB.h"
 #include "Core/Loaders.h"
 #include "Core/Util/GameManager.h"
 #include "Core/Util/RecentFiles.h"
@@ -150,6 +151,7 @@ bool GameInfo::Delete() {
 	case IdentifiedFileType::ARCHIVE_RAR:
 	case IdentifiedFileType::ARCHIVE_ZIP:
 	case IdentifiedFileType::ARCHIVE_7Z:
+	case IdentifiedFileType::UNKNOWN:
 	case IdentifiedFileType::PPSSPP_GE_DUMP:
 		{
 			const Path &fileToRemove = filePath_;
@@ -376,6 +378,21 @@ std::string GameInfo::GetTitle() {
 		return title;
 	} else {
 		return filePath_.GetFilename();
+	}
+}
+
+std::string GameInfo::GetDBTitle() {
+	std::lock_guard<std::mutex> guard(lock);
+	if (!(hasFlags & GameInfoFlags::PARAM_SFO) && !title.empty()) {
+		return filePath_.GetFilename();
+	}
+
+	std::vector<GameDBInfo> dbInfos;
+	const bool inGameDB = g_gameDB.GetGameInfos(id_version, &dbInfos);
+	if (inGameDB) {
+		return std::string(dbInfos[0].title);
+	} else {
+		return title;
 	}
 }
 
@@ -711,7 +728,7 @@ handleELF:
 			if (flags_ & GameInfoFlags::ICON) {
 				Path screenshotPath = gamePath_.WithReplacedExtension(".ppdmp", ".png");
 				// Let's use the comparison screenshot as an icon, if it exists.
-				if (ReadLocalFileToString(screenshotPath, &info_->icon.data, &info_->lock)) {
+				if (screenshotPath.IsLocalType() && ReadLocalFileToString(screenshotPath, &info_->icon.data, &info_->lock)) {
 					info_->icon.dataLoaded = true;
 				}
 			}
@@ -855,7 +872,7 @@ handleELF:
 
 		if (flags_ & GameInfoFlags::PARAM_SFO) {
 			// We fetch the hasConfig together with the params, since that's what fills out the id.
-			info_->hasConfig = g_Config.hasGameConfig(info_->id);
+			info_->hasConfig = g_Config.HasGameConfig(info_->id);
 		}
 
 		if (flags_ & GameInfoFlags::SIZE) {

@@ -423,8 +423,9 @@ void VulkanRenderManager::StartThreads() {
 	}
 }
 
-// Called from main thread.
+// MUST be called from emuthread!
 void VulkanRenderManager::StopThreads() {
+	INFO_LOG(Log::G3D, "VulkanRenderManager::StopThreads");
 	// Make sure we don't have an open non-backbuffer render pass
 	if (curRenderStep_ && curRenderStep_->render.framebuffer != nullptr) {
 		EndCurRenderStep();
@@ -1637,6 +1638,7 @@ void VulkanRenderManager::Run(VKRRenderThreadTask &task) {
 
 	default:
 		_dbg_assert_(false);
+		break;
 	}
 
 	VLOG("PULL: Finished running frame %d", task.frame);
@@ -1739,7 +1741,7 @@ VKRPipelineLayout *VulkanRenderManager::CreatePipelineLayout(BindingType *bindin
 			bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 			break;
 		default:
-			_dbg_assert_(false);
+			UNREACHABLE();
 			break;
 		}
 	}

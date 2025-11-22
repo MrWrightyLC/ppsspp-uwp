@@ -16,20 +16,20 @@
 #include <vector>
 
 #include "Common/Render/TextureAtlas.h"
+#include "Common/Render/Text/Font.h"
 #include "Common/Math/lin/matrix4x4.h"
 #include "Common/Math/math_util.h"
 #include "Common/Math/geom2d.h"
 #include "Common/Input/KeyCodes.h"
 
 #include "Common/Common.h"
+#include "Common/UI/Screen.h"  // for DialogResult
 
 #undef small
 
 struct KeyInput;
 struct TouchInput;
 struct AxisInput;
-
-struct ImageID;
 
 class DrawBuffer;
 class Texture;
@@ -77,22 +77,13 @@ struct Style {
 	ImageID image;  // where applicable.
 };
 
-struct FontStyle {
-	FontStyle() {}
-	FontStyle(FontID atlasFnt, const char *name, int size) : atlasFont(atlasFnt), fontName(name), sizePts(size) {}
-
-	FontID atlasFont{ nullptr };
-	// For native fonts:
-	std::string fontName;
-	int sizePts = 0;
-	int flags = 0;
-};
-
 // To use with an UI atlas.
 struct Theme {
-	FontStyle uiFont;
+	FontStyle uiFontTiny;
 	FontStyle uiFontSmall;
+	FontStyle uiFont;
 	FontStyle uiFontBig;
+	FontStyle uiFontCode;
 
 	ImageID checkOn;
 	ImageID checkOff;
@@ -139,8 +130,11 @@ typedef float Size;  // can also be WRAP_CONTENT or FILL_PARENT.
 static constexpr Size WRAP_CONTENT = -1.0f;
 static constexpr Size FILL_PARENT = -2.0f;
 
+// TODO: This needs to move to the theme.
+static constexpr Size ITEM_HEIGHT = 64.f;
+
 // Gravity
-enum Gravity {
+enum class Gravity {
 	G_LEFT = 0,
 	G_RIGHT = 1,
 	G_HCENTER = 2,
@@ -161,6 +155,7 @@ enum Gravity {
 
 	G_VERTMASK = 3 << 2,
 };
+ENUM_CLASS_BITOPS(Gravity);
 
 enum Borders {
 	BORDER_NONE = 0,
@@ -179,15 +174,6 @@ enum class BorderStyle {
 	HEADER_FG,
 	ITEM_DOWN_BG,
 };
-
-enum Orientation {
-	ORIENT_HORIZONTAL,
-	ORIENT_VERTICAL,
-};
-
-inline Orientation Opposite(Orientation o) {
-	if (o == ORIENT_HORIZONTAL) return ORIENT_VERTICAL; else return ORIENT_HORIZONTAL;
-}
 
 inline FocusDirection Opposite(FocusDirection d) {
 	switch (d) {
@@ -209,13 +195,6 @@ enum MeasureSpecType {
 	UNSPECIFIED,
 	EXACTLY,
 	AT_MOST,
-};
-
-// I hope I can find a way to simplify this one day.
-enum EventReturn {
-	EVENT_DONE,  // Return this when no other view may process this event, for example if you changed the view hierarchy
-	EVENT_SKIPPED,  // Return this if you ignored an event
-	EVENT_CONTINUE,  // Return this if it's safe to send this event to further listeners. This should normally be the default choice but often EVENT_DONE is necessary.
 };
 
 enum FocusFlags {
@@ -247,15 +226,14 @@ struct MeasureSpec {
 
 // Should cover all bases.
 struct EventParams {
-	View *v;
-	uint32_t a, b, x, y;
-	float f;
+	View *v = nullptr;
+	uint32_t a = 0, b = 0, x = 0, y = 0;
+	float f = 0.0f;
 	std::string s;
+	DialogResult bubbleResult = DialogResult::DR_NONE;
 };
 
-struct HandlerRegistration {
-	std::function<EventReturn(EventParams&)> func;
-};
+typedef std::function<void(EventParams &)> EventCallback;
 
 class Event {
 public:
@@ -264,20 +242,20 @@ public:
 	// Call this from input thread or whatever, it doesn't matter
 	void Trigger(EventParams &e);
 	// Call this from UI thread
-	EventReturn Dispatch(EventParams &e);
+	void Dispatch(EventParams &e);
 
 	// This is now the suggested default way to bind a handler - just used a lambda, and if necessary call other functions.
-	void Add(std::function<EventReturn(EventParams &)> func);
+	void Add(EventCallback func);
 
 	// The old way of doing things.
 	template<class T>
-	T *Handle(T *thiz, EventReturn (T::* theCallback)(EventParams &)) {
+	T *Handle(T *thiz, void (T::* theCallback)(EventParams &)) {
 		Add(std::bind(theCallback, thiz, std::placeholders::_1));
 		return thiz;
 	}
 
 private:
-	std::vector<HandlerRegistration> handlers_;
+	std::function<void(EventParams&)> func_;
 	DISALLOW_COPY_AND_ASSIGN(Event);
 };
 
@@ -485,6 +463,10 @@ public:
 	}
 
 	virtual void Recurse(void (*func)(View *view)) {}
+	virtual void SetAutoResult(DialogResult result) {
+		hasAutoResult_ = true;
+		autoResult_ = result;
+	}
 
 protected:
 	// Inputs to layout
@@ -504,6 +486,8 @@ protected:
 
 	// Whether to use popup colors for styling.
 	bool popupStyle_ = false;
+	bool hasAutoResult_ = false;
+	DialogResult autoResult_ = DR_OK;
 
 private:
 	std::function<bool()> enabledFunc_;
@@ -542,7 +526,7 @@ protected:
 	// Internal method that fires on a click. Default behaviour is to trigger
 	// the event.
 	// Use it for checking/unchecking checkboxes, etc.
-	virtual void Click();
+	virtual void ClickInternal();
 	void DrawBG(UIContext &dc, const Style &style);
 
 	CallbackColorTween *bgColor_ = nullptr;
@@ -561,7 +545,6 @@ public:
 	Button(std::string_view text, ImageID imageID, LayoutParams *layoutParams = 0)
 		: Clickable(layoutParams), text_(text), imageID_(imageID) {}
 
-	void Click() override;
 	void Draw(UIContext &dc) override;
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
 	std::string_view GetText() const { return text_; }
@@ -581,6 +564,7 @@ public:
 		scale_ = f;
 	}
 private:
+	void ClickInternal() override;
 	Style style_;
 	std::string text_;
 	ImageID imageID_;
@@ -594,12 +578,12 @@ class RadioButton : public Clickable {
 public:
 	RadioButton(int *value, int thisButtonValue, std::string_view text, LayoutParams *layoutParams = 0)
 		: Clickable(layoutParams), value_(value), thisButtonValue_(thisButtonValue), text_(text) {}
-	void Click() override;
 	void Draw(UIContext &dc) override;
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
 	std::string DescribeText() const override;
 
 private:
+	void ClickInternal() override;
 	int *value_;
 	int thisButtonValue_;
 	std::string text_;
@@ -732,7 +716,6 @@ public:
 	Choice(ImageID image, float imgScale, float imgRot, bool imgFlipH = false, LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), image_(image), rightIconImage_(ImageID::invalid()), imgScale_(imgScale), imgRot_(imgRot), imgFlipH_(imgFlipH) {}
 
-	void Click() override;
 	void GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const override;
 	void Draw(UIContext &dc) override;
 	std::string DescribeText() const override;
@@ -756,8 +739,15 @@ public:
 	void SetShine(bool shine) {
 		shine_ = true;
 	}
+	void SetImageScale(float scale) {
+		imgScale_ = scale;
+	}
+	void SetText(std::string_view text) {
+		text_ = text;
+	}
 
 protected:
+	void ClickInternal() override;
 	// hackery
 	virtual bool IsSticky() const { return false; }
 
@@ -785,10 +775,12 @@ private:
 // Different key handling.
 class StickyChoice : public Choice {
 public:
-	StickyChoice(std::string_view text, std::string_view smallText = "", LayoutParams *layoutParams = 0)
+	StickyChoice(std::string_view text, std::string_view smallText = "", LayoutParams *layoutParams = nullptr)
 		: Choice(text, smallText, false, layoutParams) {}
-	StickyChoice(ImageID buttonImage, LayoutParams *layoutParams = 0)
+	StickyChoice(ImageID buttonImage, LayoutParams *layoutParams = nullptr)
 		: Choice(buttonImage, layoutParams) {}
+	StickyChoice(std::string_view text, ImageID image, LayoutParams *layoutParams = nullptr)
+		: Choice(text, image, layoutParams) {}
 
 	bool Key(const KeyInput &key) override;
 	bool Touch(const TouchInput &touch) override;
@@ -826,14 +818,15 @@ public:
 private:
 	std::string text_;
 	std::string rightText_;
-
-	bool choiceStyle_ = false;
 };
 
 class AbstractChoiceWithValueDisplay : public Choice {
 public:
 	AbstractChoiceWithValueDisplay(std::string_view text, LayoutParams *layoutParams = nullptr)
 		: Choice(text, layoutParams) {
+	}
+	AbstractChoiceWithValueDisplay(std::string_view text, ImageID image, LayoutParams *layoutParams = nullptr)
+		: Choice(text, image, layoutParams) {
 	}
 
 	void Draw(UIContext &dc) override;
@@ -891,25 +884,27 @@ class CheckBox : public ClickableItem {
 public:
 	CheckBox(bool *toggle, std::string_view text, std::string_view smallText = "", LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), toggle_(toggle), text_(text), smallText_(smallText) {
-		OnClick.Handle(this, &CheckBox::OnClicked);
 	}
 
 	// Image-only "checkbox", lights up instead of showing a checkmark.
 	CheckBox(bool *toggle, ImageID imageID, LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), toggle_(toggle), imageID_(imageID) {
-		OnClick.Handle(this, &CheckBox::OnClicked);
 	}
 
 	void Draw(UIContext &dc) override;
 	std::string DescribeText() const override;
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
 
-	EventReturn OnClicked(EventParams &e);
 	//allow external agents to toggle the checkbox
 	virtual void Toggle();
 	virtual bool Toggled() const;
 
+	// we don't allow these for checkboxes.
+	void SetAutoResult(DialogResult result) override {}
+
 protected:
+	void ClickInternal() override;
+
 	bool *toggle_;
 	std::string text_;
 	std::string smallText_;
@@ -994,6 +989,24 @@ private:
 	float size_;
 };
 
+// Single-line text only.
+class SimpleTextView : public InertView {
+public:
+	SimpleTextView(std::string_view text, LayoutParams *layoutParams = 0)
+		: InertView(layoutParams), text_(text) {
+	}
+	void SetSmall(bool small) { small_ = small; }
+	void SetBig(bool big) { big_ = big; }
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
+	void Draw(UIContext &dc) override;
+
+private:
+	FontStyle ComputeStyle(const UIContext &dc) const;
+	std::string text_;
+	bool small_ = false;
+	bool big_ = false;
+};
+
 class TextView : public InertView {
 public:
 	TextView(std::string_view text, LayoutParams *layoutParams = 0)
@@ -1025,7 +1038,7 @@ private:
 	int textAlign_;
 	uint32_t textColor_;
 	bool hasTextColor_ = false;
-	bool small_;
+	bool small_ = false;
 	bool big_ = false;
 	bool shadow_ = false;
 	bool focusable_ = false;
@@ -1043,8 +1056,8 @@ public:
 	Event OnClick;
 
 private:
-	bool down_;
-	bool dragging_;
+	bool down_ = false;
+	bool dragging_ = false;
 };
 
 class TextEdit : public View {
@@ -1104,7 +1117,7 @@ public:
 private:
 	std::string text_;
 	ImageID atlasImage_;
-	ImageSizeMode sizeMode_;
+	ImageSizeMode sizeMode_;  // TODO: Not actually used yet.
 	float scale_ = 1.0f;
 };
 

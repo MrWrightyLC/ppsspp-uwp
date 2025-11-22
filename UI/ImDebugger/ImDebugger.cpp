@@ -2395,6 +2395,7 @@ void ImDebugger::Frame(MIPSDebugInterface *mipsDebug, GPUDebugInterface *gpuDebu
 			ImGui::MenuItem("Callstacks", nullptr, &cfg_.callstackOpen);
 			ImGui::MenuItem("Breakpoints", nullptr, &cfg_.breakpointsOpen);
 			ImGui::MenuItem("Watch", nullptr, &cfg_.watchOpen);
+			ImGui::MenuItem("JIT viewer", nullptr, &cfg_.jitViewerOpen);
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Symbols")) {
@@ -2621,6 +2622,10 @@ void ImDebugger::Frame(MIPSDebugInterface *mipsDebug, GPUDebugInterface *gpuDebu
 		logWindow_.Draw(cfg_);
 	}
 
+	if (cfg_.jitViewerOpen) {
+		jitViewer_.Draw(cfg_, control);
+	}
+
 	if (cfg_.displayOpen) {
 		DrawDisplayWindow(cfg_, gpuDebug->GetFramebufferManagerCommon());
 	}
@@ -2792,7 +2797,9 @@ public:
 		if (save_) {
 			section_->Set(key, *value);
 		} else {
-			section_->Get(key, value, defaultValue);
+			if (!section_->Get(key, value)) {
+				*value = defaultValue;
+			}
 		}
 	}
 private:
@@ -2804,7 +2811,7 @@ void ImConfig::SyncConfig(IniFile *ini, bool save) {
 	Syncer sync(save);
 	sync.SetSection(ini->GetOrCreateSection("Windows"));
 	sync.Sync("disasmOpen", &disasmOpen, true);
-	sync.Sync("demoOpen ", &demoOpen, false);
+	sync.Sync("demoOpen", &demoOpen, false);
 	sync.Sync("gprOpen", &gprOpen, false);
 	sync.Sync("fprOpen", &fprOpen, false);
 	sync.Sync("vfpuOpen", &vfpuOpen, false);
@@ -2845,6 +2852,7 @@ void ImConfig::SyncConfig(IniFile *ini, bool save) {
 	sync.Sync("watchOpen", &watchOpen, false);
 	sync.Sync("paramSFOOpen", &paramSFOOpen, false);
 	sync.Sync("atracToolOpen", &atracToolOpen, false);
+	sync.Sync("jitViewerOpen", &jitViewerOpen, false);
 	for (int i = 0; i < 4; i++) {
 		char name[64];
 		snprintf(name, sizeof(name), "memory%dOpen", i + 1);

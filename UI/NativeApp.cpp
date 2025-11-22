@@ -87,7 +87,7 @@
 #include "Common/VR/PPSSPPVR.h"
 #include "Common/Thread/ThreadManager.h"
 #include "Common/Audio/AudioBackend.h"
-
+#include "Common/UI/PopupScreens.h"
 #include "Core/ControlMapper.h"
 #include "Core/Config.h"
 #include "Core/ConfigValues.h"
@@ -117,6 +117,7 @@
 #include "GPU/GPUCommon.h"
 #include "GPU/Common/PresentationCommon.h"
 #include "UI/AudioCommon.h"
+#include "UI/Background.h"
 #include "UI/BackgroundAudio.h"
 #include "UI/ControlMappingScreen.h"
 #include "UI/DevScreens.h"
@@ -131,10 +132,8 @@
 #include "UI/OnScreenDisplay.h"
 #include "UI/RemoteISOScreen.h"
 #include "UI/Theme.h"
+#include "UI/UIAtlas.h"
 
-#if defined(USING_QT_UI)
-#include <QFontDatabase>
-#endif
 #if PPSSPP_PLATFORM(UWP)
 #include <dwrite_3.h>
 #include "UWP/UWPHelpers/InputHelpers.h"
@@ -694,41 +693,6 @@ void NativeInit(int argc, const char *argv[], const char *savegame_dir, const ch
 		}
 	}
 
-	auto des = GetI18NCategory(I18NCat::DESKTOPUI);
-	// Note to translators: do not translate this/add this to PPSSPP-lang's files.
-	// It's intended to be custom for every user.
-	// Only add it to your own personal copies of PPSSPP.
-#if PPSSPP_PLATFORM(UWP)
-	// Roboto font is loaded in TextDrawerUWP.
-	g_Config.sFont = des->T("Font", "Roboto");
-#elif defined(USING_WIN_UI) && !PPSSPP_PLATFORM(UWP)
-	// TODO: Could allow a setting to specify a font file to load?
-	// TODO: Make this a constant if we can sanely load the font on other systems?
-	AddFontResourceEx(L"assets/Roboto-Condensed.ttf", FR_PRIVATE, NULL);
-	// The font goes by two names, let's allow either one.
-	if (CheckFontIsUsable(L"Roboto Condensed")) {
-		g_Config.sFont = des->T("Font", "Roboto Condensed");
-	} else {
-		g_Config.sFont = des->T("Font", "Roboto");
-	}
-#elif defined(USING_QT_UI)
-	size_t fontSize = 0;
-	uint8_t *fontData = g_VFS.ReadFile("Roboto-Condensed.ttf", &fontSize);
-	if (fontData) {
-		int fontID = QFontDatabase::addApplicationFontFromData(QByteArray((const char *)fontData, fontSize));
-		delete [] fontData;
-
-		QStringList fontsFound = QFontDatabase::applicationFontFamilies(fontID);
-		if (fontsFound.size() >= 1) {
-			// Might be "Roboto" or "Roboto Condensed".
-			g_Config.sFont = des->T("Font", fontsFound.at(0).toUtf8().constData());
-		}
-	} else {
-		// Let's try for it being a system font.
-		g_Config.sFont = des->T("Font", "Roboto Condensed");
-	}
-#endif
-
 	g_BackgroundAudio.SFX().Init();
 
 	if (!boot_filename.empty() && stateToLoad.Valid()) {
@@ -842,14 +806,17 @@ bool NativeInitGraphics(GraphicsContext *graphicsContext) {
 	ui_draw2d.SetFontAtlas(GetFontAtlas());
 
 	uiContext = new UIContext();
-	uiContext->theme = GetTheme();
-	UpdateTheme(uiContext);
+	uiContext->SetTheme(GetTheme());
+	uiContext->SetAtlasProvider(&AtlasProvider);
+	UpdateTheme();
 
 	ui_draw2d.Init(g_draw, texColorPipeline);
 
 	uiContext->Init(g_draw, texColorPipeline, colorPipeline, &ui_draw2d);
-	if (uiContext->Text())
-		uiContext->Text()->SetFont("Tahoma", 20, 0);
+	if (uiContext->Text()) {
+		// This seems unnecessary.
+		// uiContext->Text()->SetOrCreateFont(FontStyle(FontID::invalid(), FontFamily::SansSerif, 20, FontStyleFlags::Default));
+	}
 
 	g_screenManager->setUIContext(uiContext);
 	g_screenManager->setPostRenderCallback(&CallbackPostRender, nullptr);
@@ -917,7 +884,7 @@ bool CreateGlobalPipelines() {
 	}
 
 	InputLayout *inputLayout = ui_draw2d.CreateInputLayout(g_draw);
-	BlendState *blendNormal = g_draw->CreateBlendState({ true, 0xF, BlendFactor::SRC_ALPHA, BlendFactor::ONE_MINUS_SRC_ALPHA });
+	BlendState *blendNormal = g_draw->CreateBlendState({ true, 0xF, BlendFactor::ONE, BlendFactor::ONE_MINUS_SRC_ALPHA });
 	DepthStencilState *depth = g_draw->CreateDepthStencilState({ false, false, Comparison::LESS });
 	RasterState *rasterNoCull = g_draw->CreateRasterState({});
 
@@ -1177,7 +1144,8 @@ void NativeFrame(GraphicsContext *graphicsContext) {
 	if (g_Config.bGpuLogProfiler)
 		debugFlags |= Draw::DebugFlags::PROFILE_SCOPES;
 
-	g_frameTiming.Reset(g_draw);
+	// Can be overridden by sceDisplay which may pass true for the second argument.
+	g_frameTiming.ComputePresentMode(g_draw, false);
 
 	g_draw->BeginFrame(debugFlags);
 
@@ -1204,9 +1172,7 @@ void NativeFrame(GraphicsContext *graphicsContext) {
 		ClearFailedGPUBackends();
 	}
 
-	int interval;
-	Draw::PresentMode presentMode = ComputePresentMode(g_draw, &interval);
-	g_draw->Present(presentMode, interval);
+	g_draw->Present(g_frameTiming.PresentMode());
 
 	if (resized) {
 		INFO_LOG(Log::G3D, "Resized flag set - recalculating bounds");
@@ -1247,12 +1213,27 @@ void NativeFrame(GraphicsContext *graphicsContext) {
 		g_BackgroundAudio.Play();
 
 		float refreshRate = System_GetPropertyFloat(SYSPROP_DISPLAY_REFRESH_RATE);
-		// Simple throttling to not burn the GPU in the menu.
-		// TODO: This is only necessary in MAILBOX or IMMEDIATE presentation modes.
-		double diffTime = time_now_d() - startTime;
-		int sleepTime = (int)(1000.0 / refreshRate) - (int)(diffTime * 1000.0);
-		if (sleepTime > 0)
-			sleep_ms(sleepTime, "fallback-throttle");
+		static double lastTime = 0.0;
+		if (lastTime > 0.0) {
+			double now = time_now_d();
+			// Simple throttling to not burn the GPU in the menu.
+			// TODO: This should move into NativeFrame.
+			double diffTime = now - lastTime;
+			int sleepTimeUs = (int)(1000000 * ((1.0 / refreshRate) - diffTime));
+			// printf("sleep: %0.3f ms (diff: %0.3f) %f\n", (double)sleepTimeUs / 1000, diffTime * 1000.0, refreshRate);
+
+			// If presentation mode is FIFO, we don't need to sleep a lot, we'll be throttled by
+			// presentation. But still, let's sleep a bit.
+			// Actually, for some reason this increases latency a lot, to the degree that the UI
+			// gets hard to use.. Commenting out for now.
+			// if (g_frameTiming.PresentMode() == Draw::PresentMode::FIFO) {
+			//    sleepTimeUs = std::min(2000, sleepTimeUs); // 2 ms
+			// }
+
+			if (sleepTimeUs > 0)
+				sleep_us(sleepTimeUs, "fallback-throttle");
+		}
+		lastTime = time_now_d();
 	}
 }
 
@@ -1275,7 +1256,8 @@ bool HandleGlobalMessage(UIMessage message, const std::string &value) {
 	}
 	else if (message == UIMessage::GPU_RENDER_RESIZED) {
 		if (gpu) {
-			gpu->NotifyRenderResized();
+			DisplayLayoutConfig &config = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+			gpu->NotifyRenderResized(config);
 		}
 		return true;
 	}
@@ -1381,7 +1363,7 @@ bool NativeKey(const KeyInput &key) {
 	}
 
 #if PPSSPP_PLATFORM(UWP)
-	// Ignore if key sent from OnKeyDown/OnKeyUp/XInput while text edit active 
+	// Ignore if key sent from OnKeyDown/OnKeyUp/XInput while text edit active
 	// it's already handled by `OnCharacterReceived`
 	if (IgnoreInput(key.keyCode) && !(key.flags & KEY_CHAR)) {
 		return false;
@@ -1397,6 +1379,24 @@ bool NativeKey(const KeyInput &key) {
 			if (std::find(pspKeys.begin(), pspKeys.end(), VIRTKEY_PAUSE) != pspKeys.end()) {
 				System_ExitApp();
 				return true;
+			}
+		}
+	}
+#endif
+
+#ifdef _DEBUG
+	// Debug hack: Randomize the language with F9!
+	if (false && (key.keyCode == NKCODE_F9 && (key.flags & KEY_DOWN))) {
+		std::vector<File::FileInfo> tempLangs;
+		g_VFS.GetFileListing("lang", &tempLangs, "ini");
+		int x = rand() % tempLangs.size();
+		std::string_view code, part2;
+		if (SplitStringOnce(tempLangs[x].name, &code, &part2, '.')) {
+			g_Config.sLanguageIni = code;
+			INFO_LOG(Log::System, "Switching to random language: %s", g_Config.sLanguageIni.c_str());
+			if (g_i18nrepo.LoadIni(g_Config.sLanguageIni)) {
+				g_screenManager->RecreateAllViews();
+				System_Notify(SystemNotification::UI);
 			}
 		}
 	}
@@ -1477,6 +1477,7 @@ void NativeMouseDelta(float dx, float dy) {
 	SendMouseDeltaAxis();
 }
 
+// TODO: Should include a device ID here, since accelerometers can be on pads for example (DualSense).
 void NativeAccelerometer(float tiltX, float tiltY, float tiltZ) {
 	if (g_Config.iTiltInputType == TILT_NULL) {
 		// if tilt events are disabled, don't do anything special.
@@ -1626,10 +1627,15 @@ bool Native_IsWindowHidden() {
 }
 
 static bool IsWindowSmall(int pixelWidth, int pixelHeight) {
+	if (!g_Config.bShrinkIfWindowSmall) {
+		return false;
+	}
+
 	// Can't take this from config as it will not be set if windows is maximized.
 	int w = (int)(pixelWidth * g_display.dpi_scale_real_x);
 	int h = (int)(pixelHeight * g_display.dpi_scale_real_y);
-	return g_Config.IsPortrait() ? (h < 480 + 80) : (w < 480 + 80);
+	DisplayLayoutConfig &config = g_Config.GetDisplayLayoutConfig(g_display.GetDeviceOrientation());
+	return config.InternalRotationIsPortrait() ? (h < 480 + 80) : (w < 480 + 80);
 }
 
 bool Native_UpdateScreenScale(int pixel_width, int pixel_height, float customScale) {
