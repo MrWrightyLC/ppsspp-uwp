@@ -9,6 +9,7 @@
 #include "Common/StringUtils.h"
 #include "UI/MiscViews.h"
 #include "UI/GameInfoCache.h"
+#include "Common/UI/PopupScreens.h"
 #include "Core/Config.h"
 
 TextWithImage::TextWithImage(ImageID imageID, std::string_view text, UI::LinearLayoutParams *layoutParams) : UI::LinearLayout(ORIENT_HORIZONTAL, layoutParams) {
@@ -65,71 +66,11 @@ TopBar::TopBar(const UIContext &ctx, TopBarFlags flags, std::string_view title, 
 	}
 
 	if (flags & TopBarFlags::ContextMenuButton) {
-		Choice *menuButton = Add(new Choice(ImageID("I_THREE_DOTS"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)));
-		menuButton->OnClick.Add([this](UI::EventParams &e) {
+		contextMenuButton_ = Add(new Choice(ImageID("I_THREE_DOTS"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)));
+		contextMenuButton_->OnClick.Add([this](UI::EventParams &e) {
 			this->OnContextMenuClick.Trigger(e);
 		});
 	}
-}
-
-SettingInfoMessage::SettingInfoMessage(int align, float cutOffY, UI::AnchorLayoutParams *lp)
-	: UI::LinearLayout(ORIENT_HORIZONTAL, lp), cutOffY_(cutOffY) {
-	using namespace UI;
-	SetSpacing(0.0f);
-	Add(new Spacer(10.0f));
-	text_ = Add(new TextView("", align, false, new LinearLayoutParams(1.0, Margins(0, 10))));
-	Add(new Spacer(10.0f));
-}
-
-void SettingInfoMessage::Show(std::string_view text, const UI::View *refView) {
-	if (refView) {
-		Bounds b = refView->GetBounds();
-		const UI::AnchorLayoutParams *lp = GetLayoutParams()->As<UI::AnchorLayoutParams>();
-		if (lp) {
-			if (cutOffY_ != -1.0f && b.y >= cutOffY_) {
-				ReplaceLayoutParams(new UI::AnchorLayoutParams(lp->width, lp->height, lp->left, 80.0f, lp->right, lp->bottom, lp->centering));
-			} else {
-				ReplaceLayoutParams(new UI::AnchorLayoutParams(lp->width, lp->height, lp->left, g_display.dp_yres - 80.0f - 40.0f, lp->right, lp->bottom, lp->centering));
-			}
-		}
-	}
-	if (text_) {
-		text_->SetText(text);
-	}
-	timeShown_ = time_now_d();
-}
-
-void SettingInfoMessage::Draw(UIContext &dc) {
-	static const double FADE_TIME = 1.0;
-	static const float MAX_ALPHA = 0.9f;
-
-	// Let's show longer messages for more time (guesstimate at reading speed.)
-	// Note: this will give multibyte characters more time, but they often have shorter words anyway.
-	double timeToShow = std::max(1.5, text_->GetText().size() * 0.05);
-
-	double sinceShow = time_now_d() - timeShown_;
-	float alpha = MAX_ALPHA;
-	if (timeShown_ == 0.0 || sinceShow > timeToShow + FADE_TIME) {
-		alpha = 0.0f;
-	} else if (sinceShow > timeToShow) {
-		alpha = MAX_ALPHA - MAX_ALPHA * (float)((sinceShow - timeToShow) / FADE_TIME);
-	}
-
-	UI::Style style = dc.GetTheme().tooltipStyle;
-
-	if (alpha >= 0.001f) {
-		uint32_t bgColor = alphaMul(style.background.color, alpha);
-		dc.FillRect(UI::Drawable(bgColor), bounds_);
-	}
-
-	uint32_t textColor = alphaMul(style.fgColor, alpha);
-	text_->SetTextColor(textColor);
-	ViewGroup::Draw(dc);
-	showing_ = sinceShow <= timeToShow; // Don't consider fade time
-}
-
-std::string SettingInfoMessage::GetText() const {
-	return (showing_ && text_) ? text_->GetText() : "";
 }
 
 void ShinyIcon::Draw(UIContext &dc) {
@@ -217,4 +158,93 @@ PaneTitleBar::PaneTitleBar(const Path &gamePath, std::string_view title, const s
 			System_LaunchUrl(LaunchUrlType::BROWSER_URL, settingsUrl);
 		});
 	}
+}
+
+void GameImageView::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
+	std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath_, image_);
+	GameInfoTex *tex = GetTex(info);
+	w = 0;
+	h = 0;
+	if (!tex || !tex->texture) {
+		return;
+	}
+	Draw::Texture *texture = tex->texture;
+	w = tex->texture->Width();
+	h = tex->texture->Height();
+}
+
+GameInfoTex *GameImageView::GetTex(std::shared_ptr<GameInfo> info) const {
+	GameInfoTex *tex = nullptr;
+	switch (image_) {
+	case GameInfoFlags::ICON:
+		tex = &info->icon;
+		break;
+	case GameInfoFlags::PIC0:
+		tex = &info->pic0;
+		break;
+	case GameInfoFlags::PIC1:
+		tex = &info->pic1;
+		break;
+	}
+	return tex;
+}
+
+void GameImageView::Draw(UIContext &dc) {
+	using namespace UI;
+	std::shared_ptr<GameInfo> info = g_gameInfoCache->GetInfo(dc.GetDrawContext(), gamePath_, image_);
+	if (!info->Ready(image_)) {
+		return;
+	}
+
+	GameInfoTex *tex = GetTex(info);
+	if (!tex || !tex->texture) {
+		return;
+	}
+
+	Draw::Texture *texture = tex->texture;
+
+	float textureWidth_ = texture->Width() * scale_;
+	float textureHeight_ = texture->Height() * scale_;
+
+	// Fade icon with the backgrounds.
+	double loadTime = info->icon.timeLoaded;
+	auto pic = info->GetPIC1();
+	if (pic) {
+		loadTime = std::max(loadTime, pic->timeLoaded);
+	}
+	uint32_t color = whiteAlpha(ease((time_now_d() - loadTime) * 3));
+
+	// Adjust size so we don't stretch the image vertically or horizontally.
+	// Make sure it's not wider than 144 (like Doom Legacy homebrew), ugly in the grid mode.
+	float nw = std::min(bounds_.h * textureWidth_ / textureHeight_, (float)bounds_.w);
+	int x = bounds_.x + (bounds_.w - nw) / 2.0f;
+
+	dc.Flush();
+	dc.GetDrawContext()->BindTexture(0, texture);
+	dc.Draw()->Rect(x, bounds_.y, nw, bounds_.h, color);
+	dc.Flush();
+	dc.RebindTexture();
+}
+
+void AddRotationPicker(ScreenManager *screenManager, UI::ViewGroup *parent, bool text) {
+	using namespace UI;
+	static const char *screenRotation[] = { "Auto", "Landscape", "Portrait", "Landscape Reversed" };
+	static const std::map<int, ImageID> screenRotationIcons{
+		{ROTATION_AUTO, ImageID("I_DEVICE_ROTATION_AUTO")},
+		{ROTATION_LOCKED_HORIZONTAL, ImageID("I_DEVICE_ROTATION_LANDSCAPE")},
+		{ROTATION_LOCKED_VERTICAL, ImageID("I_DEVICE_ROTATION_PORTRAIT")},
+		{ROTATION_LOCKED_HORIZONTAL180, ImageID("I_DEVICE_ROTATION_LANDSCAPE_REV")},
+	};
+
+	auto co = GetI18NCategory(I18NCat::CONTROLS);
+
+	PopupMultiChoice *rot = parent->Add(new PopupMultiChoice(&g_Config.iScreenRotation, text ? co->T("Screen Rotation") : "", screenRotation, 0, ARRAY_SIZE(screenRotation), I18NCat::CONTROLS, screenManager, text ? nullptr : new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT)));
+	rot->SetChoiceIcons(screenRotationIcons);
+	// Portrait Reversed is not recommended on iPhone (and we also ban it in the plist).
+	// However it's recommended to support it on iPad, so maybe we will in the future.
+	rot->HideChoice(4);
+	rot->OnChoice.Add([](UI::EventParams &) {
+		INFO_LOG(Log::System, "New display rotation: %d", g_Config.iScreenRotation);
+		System_Notify(SystemNotification::ROTATE_UPDATED);
+	});
 }

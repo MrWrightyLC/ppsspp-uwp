@@ -142,7 +142,7 @@ bool MultiTouchButton::Touch(const TouchInput &input) {
 }
 
 void MultiTouchButton::Draw(UIContext &dc) {
-	float opacity = g_gamepadOpacity;
+	float opacity = std::max(g_gamepadOpacity, minimumAlpha_);
 	if (opacity <= 0.0f)
 		return;
 
@@ -167,12 +167,15 @@ void MultiTouchButton::Draw(UIContext &dc) {
 
 	dc.Draw()->DrawImageRotated(bgImg_, bounds_.centerX(), bounds_.centerY(), scale, bgAngle_ * (M_PI * 2 / 360.0f), colorBg, flipImageH_);
 
-	int y = bounds_.centerY();
+	float x = bounds_.centerX();
+	float y = bounds_.centerY();
 	// Hack round the fact that the center of the rectangular picture the triangle is contained in
-	// is not at the "weight center" of the triangle.
+	// is not at the "weight center" of the triangle. Same for fast-forward.
 	if (img_ == ImageID("I_TRIANGLE"))
 		y -= 2.8f * scale;
-	dc.Draw()->DrawImageRotated(img_, bounds_.centerX(), y, scale, angle_ * (M_PI * 2 / 360.0f), color);
+	if (img_ == ImageID("I_FAST_FORWARD_LINE"))
+		x += 2.0f * scale;
+	dc.Draw()->DrawImageRotated(img_, x, y, scale, angle_ * (M_PI * 2 / 360.0f), color);
 }
 
 bool BoolButton::Touch(const TouchInput &input) {
@@ -754,13 +757,30 @@ void InitPadLayout(TouchControlConfig *config, DeviceOrientation orientation, fl
 	const float scale = globalScale;
 	const int halfW = xres / 2;
 
-	auto initTouchPos = [=](ConfigTouchPos *touch, float x, float y) {
+	auto initTouchPos = [=](ConfigTouchPos *touch, float x, float y, float extraScale = 1.0f) {
 		if (touch->x == -1.0f || touch->y == -1.0f) {
 			touch->x = x / xres;
 			touch->y = std::max(y, 20.0f * globalScale) / yres;
-			touch->scale = scale;
+			touch->scale = scale * extraScale;
 		}
 	};
+
+	// Pause button. Has some special handling, it MUST be visible on some platforms.
+	float Pause_button_center_X = halfW;
+	float Pause_button_center_Y = 28.0f;
+
+	if (!System_GetPropertyBool(SYSPROP_HAS_BACK_BUTTON)) {
+		// Make really sure the pause button will be visible. Setting to -1 ensures reinit.
+		if (config->touchPauseKey.x < 0.0f || config->touchPauseKey.x > 1.0f) {
+			config->touchPauseKey.x = -1;
+		}
+		if (config->touchPauseKey.y < 0.0f || config->touchPauseKey.y > 1.0f) {
+			config->touchPauseKey.y = -1;
+		}
+		config->touchPauseKey.show = true;
+	}
+
+	initTouchPos(&config->touchPauseKey, Pause_button_center_X, Pause_button_center_Y, 0.8f);
 
 	// PSP buttons (triangle, circle, square, cross)---------------------
 	// space between the PSP buttons (triangle, circle, square and cross)
@@ -875,7 +895,7 @@ void InitPadLayout(TouchControlConfig *config, DeviceOrientation orientation, fl
 	}
 }
 
-UI::ViewGroup *CreatePadLayout(const TouchControlConfig &config, float xres, float yres, bool *pause, bool showPauseButton, ControlMapper *controlMapper) {
+UI::ViewGroup *CreatePadLayout(const TouchControlConfig &config, float xres, float yres, bool *pause, ControlMapper *controlMapper) {
 	using namespace UI;
 
 	AnchorLayout *root = new AnchorLayout(new LayoutParams(FILL_PARENT, FILL_PARENT));
@@ -936,8 +956,12 @@ UI::ViewGroup *CreatePadLayout(const TouchControlConfig &config, float xres, flo
 		return nullptr;
 	};
 
-	if (showPauseButton) {
-		root->Add(new BoolButton(pause, "Pause button", roundImage, ImageID("I_ROUND"), ImageID("I_ARROW"), 1.0f, new AnchorLayoutParams(halfW, 20, NONE, NONE, Centering::Both)))->SetAngle(90);
+	if (config.touchPauseKey.show) {
+		auto button = addBoolButton(pause, "Pause button", roundImage, ImageID("I_ROUND"), ImageID("I_HAMBURGER"), config.touchPauseKey);
+		if (button) {
+			// The user is not allowed to hide this completely on some platforms - it must be findable.
+			button->SetMinimumAlpha(0.1f);
+		}
 	}
 
 	// touchActionButtonCenter.show will always be true, since that's the default.
@@ -953,9 +977,8 @@ UI::ViewGroup *CreatePadLayout(const TouchControlConfig &config, float xres, flo
 	addPSPButton(CTRL_START, "Start button", rectImage, ImageID("I_RECT"), ImageID("I_START"), config.touchStartKey);
 	addPSPButton(CTRL_SELECT, "Select button", rectImage, ImageID("I_RECT"), ImageID("I_SELECT"), config.touchSelectKey);
 
-	BoolButton *fastForward = addBoolButton(&PSP_CoreParameter().fastForward, "Fast-forward button", rectImage, ImageID("I_RECT"), ImageID("I_ARROW"), config.touchFastForwardKey);
+	BoolButton *fastForward = addBoolButton(&PSP_CoreParameter().fastForward, "Fast-forward button", rectImage, ImageID("I_RECT"), ImageID("I_FAST_FORWARD_LINE"), config.touchFastForwardKey);
 	if (fastForward) {
-		fastForward->SetAngle(180.0f);
 		fastForward->OnChange.Add([](UI::EventParams &e) {
 			if (e.a && coreState == CORE_STEPPING_CPU) {
 				Core_Resume();

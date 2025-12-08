@@ -97,15 +97,22 @@ struct DisplayLayoutConfig : public ConfigBlock {
 };
 
 struct TouchControlConfig : public ConfigBlock {
-	//space between PSP buttons
-	//the PSP button's center (triangle, circle, square, cross)
+	constexpr TouchControlConfig() {
+		// Hide all extras and custom buttons by default.
+		touchRightAnalogStick.show = false;
+		for (size_t i = 0; i < CUSTOM_BUTTON_COUNT; i++) {
+			touchCustom[i].show = false;
+		}
+	}
+	// the PSP button's center (triangle, circle, square, cross)
 	ConfigTouchPos touchActionButtonCenter;
-	float fActionButtonSpacing = 0.0f;
-	//radius of the D-pad (PSP cross)
-	// int iDpadRadius;
-	//the D-pad (PSP cross) position
+	// space between those PSP buttons
+	float fActionButtonSpacing = 1.0f;
+	// the D-pad (PSP cross) position
 	ConfigTouchPos touchDpad;
-	float fDpadSpacing = 0.0f;
+	// And its spacing.
+	float fDpadSpacing = 1.0f;
+
 	ConfigTouchPos touchStartKey;
 	ConfigTouchPos touchSelectKey;
 	ConfigTouchPos touchFastForwardKey;
@@ -113,6 +120,7 @@ struct TouchControlConfig : public ConfigBlock {
 	ConfigTouchPos touchRKey;
 	ConfigTouchPos touchAnalogStick;
 	ConfigTouchPos touchRightAnalogStick;
+	ConfigTouchPos touchPauseKey;
 
 	enum { CUSTOM_BUTTON_COUNT = 20 };
 
@@ -361,7 +369,7 @@ public:
 	int iSDLAudioBufferSize;
 	int iAudioBufferSize;
 	bool bFillAudioGaps;
-	int iAudioSyncMode;
+	int iAudioPlaybackMode;
 
 	// Legacy volume settings, 0-10. These get auto-upgraded and should not be used.
 	int iLegacyGameVolume;
@@ -658,9 +666,6 @@ public:
 	void Reload();
 	void RestoreDefaults(RestoreSettingsBits whatToRestore, bool log = false);
 
-	// Per-game config management.
-	void ChangeGameSpecific(const std::string &gameId = "", std::string_view title = "");
-
 	// Note: This doesn't switch to the config, just creates it.
 	bool CreateGameConfig(std::string_view gameId);
 	bool DeleteGameConfig(std::string_view gameId);
@@ -668,12 +673,10 @@ public:
 	bool SaveGameConfig(const std::string &pGameId, std::string_view titleForComment);
 	void UnloadGameConfig();
 
-	Path GetGameConfigFilePath(std::string_view gameId, bool *exists);
 	bool HasGameConfig(std::string_view gameId);
-	bool IsGameSpecific() const { return gameSpecific_; }
+	bool IsGameSpecific() const { return !gameId_.empty(); }
 
 	void SetSearchPath(const Path &path);
-	Path FindConfigFile(std::string_view baseFilename, bool *exists) const;
 
 	void UpdateIniLocation(const char *iniFileName = nullptr, const char *controllerIniFilename = nullptr);
 
@@ -722,15 +725,17 @@ private:
 	// Applies defaults for missing settings.
 	void ReadAllSettings(const IniFile &iniFile);
 
-	bool reload_ = false;
+	bool inReload_ = false;
 
-	bool gameSpecific_ = false;
+	// If not empty, we're using a game-specific config.
 	std::string gameId_;
 
 	PlayTimeTracker playTimeTracker_;
 
+	// Always the paths to the main configs, doesn't change with game-specific overlay.
 	Path iniFilename_;
 	Path controllerIniFilename_;
+
 	Path searchPath_;
 	Path appendedConfigFileName_;
 	// A set make more sense, but won't have many entry, and I dont want to include the whole std::set header here
@@ -738,7 +743,6 @@ private:
 };
 
 std::string CreateRandMAC();
-bool TryUpdateSavedPath(Path *path);
 
 // TODO: Find a better place for this.
 extern http::RequestManager g_DownloadManager;

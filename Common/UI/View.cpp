@@ -45,7 +45,7 @@ void MeasureBySpec(Size sz, float contentDim, MeasureSpec spec, float *measured)
 	}
 }
 
-static void ApplyBoundBySpec(float &bound, MeasureSpec spec) {
+void ApplyBoundBySpec(float &bound, MeasureSpec spec) {
 	switch (spec.type) {
 	case AT_MOST:
 		bound = bound < spec.size ? bound : spec.size;
@@ -485,10 +485,9 @@ void Choice::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, 
 		}
 		if (horiz.type != EXACTLY && layoutParams_->width > 0.0f && availWidth > layoutParams_->width)
 			availWidth = layoutParams_->width;
-		float scale = dc.CalculateTextScale(text_, availWidth, bounds_.h);
-		Bounds availBounds(0, 0, availWidth, vert.size);
+		float scale = dc.CalculateTextScale(text_, availWidth);
 		float textW = 0.0f, textH = 0.0f;
-		dc.MeasureTextRect(dc.GetTheme().uiFont, scale, scale, text_, availBounds, &textW, &textH, FLAG_WRAP_TEXT);
+		dc.MeasureTextRect(dc.GetTheme().uiFont, scale, scale, text_, availWidth, &textW, &textH, FLAG_WRAP_TEXT);
 		totalH = std::max(totalH, textH);
 		totalW += textW;
 		if (image_.isValid()) {
@@ -518,6 +517,10 @@ void Choice::Draw(UIContext &dc) {
 
 	if (image_.isValid() && text_.empty()) {
 		dc.Draw()->DrawImageRotated(image_, bounds_.centerX(), bounds_.centerY(), imgScale_, imgRot_, style.fgColor, imgFlipH_);
+		if (shine_) {
+			Bounds b = Bounds::FromCenter(bounds_.centerX(), bounds_.centerY(), bounds_.h * 0.4f);
+			DrawIconShine(dc, b.Inset(5.0f, 5.0f), 0.65f, false);
+		}
 	} else if (!text_.empty() && !hideTitle_) {
 		dc.SetFontStyle(dc.GetTheme().uiFont);
 
@@ -588,7 +591,7 @@ void InfoItem::Draw(UIContext &dc) {
 	Bounds padBounds = bounds_.Expand(-paddingX, 0);
 
 	float leftWidth, leftHeight;
-	dc.MeasureTextRect(dc.GetTheme().uiFont, 1.0f, 1.0f, text_, padBounds, &leftWidth, &leftHeight, ALIGN_VCENTER);
+	dc.MeasureTextRect(dc.GetTheme().uiFont, 1.0f, 1.0f, text_, padBounds.w, &leftWidth, &leftHeight, ALIGN_VCENTER);
 
 	dc.SetFontStyle(dc.GetTheme().uiFont);
 	dc.DrawTextRect(text_, padBounds, style.fgColor, ALIGN_VCENTER);
@@ -618,16 +621,13 @@ void ItemHeader::Draw(UIContext &dc) {
 }
 
 void ItemHeader::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const {
-	Bounds bounds(0, 0, layoutParams_->width, layoutParams_->height);
-	if (bounds.w < 0) {
+	float availWidth = layoutParams_->width;
+	if (availWidth < 0) {
 		// If there's no size, let's grow as big as we want.
-		bounds.w = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
+		availWidth = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
 	}
-	if (bounds.h < 0) {
-		bounds.h = vert.size == 0 ? MAX_ITEM_SIZE : vert.size;
-	}
-	ApplyBoundsBySpec(bounds, horiz, vert);
-	dc.MeasureTextRect(dc.GetTheme().uiFontSmall, 1.0f, 1.0f, text_, bounds, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+	ApplyBoundBySpec(availWidth, horiz);
+	dc.MeasureTextRect(dc.GetTheme().uiFontSmall, 1.0f, 1.0f, text_, availWidth, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
 }
 
 std::string ItemHeader::DescribeText() const {
@@ -660,16 +660,13 @@ void CollapsibleHeader::Draw(UIContext &dc) {
 }
 
 void CollapsibleHeader::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const {
-	Bounds bounds(0, 0, layoutParams_->width, layoutParams_->height);
-	if (bounds.w < 0) {
+	float availWidth = layoutParams_->width;
+	if (availWidth < 0) {
 		// If there's no size, let's grow as big as we want.
-		bounds.w = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
+		availWidth = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
 	}
-	if (bounds.h < 0) {
-		bounds.h = vert.size == 0 ? MAX_ITEM_SIZE : vert.size;
-	}
-	ApplyBoundsBySpec(bounds, horiz, vert);
-	dc.MeasureTextRect(dc.GetTheme().uiFontSmall, 1.0f, 1.0f, text_, bounds, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+	ApplyBoundBySpec(availWidth, horiz);
+	dc.MeasureTextRect(dc.GetTheme().uiFontSmall, 1.0f, 1.0f, text_, availWidth, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
 }
 
 void CollapsibleHeader::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
@@ -855,11 +852,10 @@ void CheckBox::GetContentDimensions(const UIContext &dc, float &w, float &h) con
 	}
 
 	if (!text_.empty()) {
-		float scale = dc.CalculateTextScale(text_, availWidth, bounds_.h);
+		float scale = dc.CalculateTextScale(text_, availWidth);
 
 		float actualWidth, actualHeight;
-		Bounds availBounds(0, 0, availWidth, bounds_.h);
-		dc.MeasureTextRect(dc.GetTheme().uiFont, scale, scale, text_, availBounds, &actualWidth, &actualHeight, ALIGN_VCENTER | FLAG_WRAP_TEXT);
+		dc.MeasureTextRect(dc.GetTheme().uiFont, scale, scale, text_, availWidth, &actualWidth, &actualHeight, ALIGN_VCENTER | FLAG_WRAP_TEXT);
 		h = std::max(actualHeight, ITEM_HEIGHT);
 	} else {
 		h = std::max(imageH, ITEM_HEIGHT);
@@ -1051,49 +1047,59 @@ void ImageView::Draw(UIContext &dc) {
 const float bulletOffset = 25;
 
 void SimpleTextView::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
-	dc.MeasureText(ComputeStyle(dc), 1.0f, 1.0f, text_, &w, &h, 0);
+	dc.MeasureText(*ComputeStyle(dc), 1.0f, 1.0f, text_, &w, &h, 0);
 }
 
 void SimpleTextView::Draw(UIContext &dc) {
 	uint32_t textColor = dc.GetTheme().itemStyle.fgColor;
-	dc.SetFontStyle(ComputeStyle(dc));
+	dc.SetFontStyle(*ComputeStyle(dc));
 	dc.DrawText(text_, bounds_.x, bounds_.y, textColor, 0);
 }
 
-FontStyle SimpleTextView::ComputeStyle(const UIContext &dc) const {
+const FontStyle *SimpleTextView::ComputeStyle(const UIContext &dc) const {
 	if (small_) {
-		return dc.GetTheme().uiFontSmall;
+		return &dc.GetTheme().uiFontSmall;
 	} else if (big_) {
-		return dc.GetTheme().uiFontBig;
+		return &dc.GetTheme().uiFontBig;
 	} else {
-		return dc.GetTheme().uiFont;
+		return &dc.GetTheme().uiFont;
 	}
 }
 
-void TextView::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const {
-	Bounds bounds(0, 0, layoutParams_->width, layoutParams_->height);
-	if (bounds.w < 0) {
-		// If there's no size, let's grow as big as we want.
-		bounds.w = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
-	}
-	if (bounds.h < 0) {
-		bounds.h = vert.size == 0 ? MAX_ITEM_SIZE : vert.size;
-	}
-	ApplyBoundsBySpec(bounds, horiz, vert);
-	if (bullet_) {
-		bounds.w -= bulletOffset;
-	}
+const FontStyle *TextView::GetTextStyle(const UIContext &dc, TextSize size) {
 	const FontStyle *style = &dc.GetTheme().uiFont;
-	if (small_) {
+	switch (size) {
+	case TextSize::Tiny:
+		style = &dc.GetTheme().uiFontTiny;
+		break;
+	case TextSize::Small:
 		style = &dc.GetTheme().uiFontSmall;
-	} else if (big_) {
+		break;
+	case TextSize::Big:
 		style = &dc.GetTheme().uiFontBig;
+		break;
+	default:
+		break;
 	}
+	return style;
+}
+
+void TextView::GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const {
+	float availWidth = layoutParams_->width;
+	if (availWidth < 0) {
+		// If there's no size, let's grow as big as we want.
+		availWidth = horiz.size == 0 ? MAX_ITEM_SIZE : horiz.size;
+	}
+	ApplyBoundBySpec(availWidth, horiz);
+	if (bullet_) {
+		availWidth -= bulletOffset;
+	}
+	const FontStyle *style = GetTextStyle(dc, textSize_);
 	float measuredW;
 	float measuredH;
-	dc.MeasureTextRect(*style, 1.0f, 1.0f, text_, bounds, &measuredW, &measuredH, textAlign_);
-	w = measuredW + pad_ * 2.0f;
-	h = measuredH + pad_ * 2.0f;
+	dc.MeasureTextRect(*style, 1.0f, 1.0f, text_, availWidth, &measuredW, &measuredH, textAlign_);
+	w = measuredW + pad_.horiz();
+	h = measuredH + pad_.vert();
 	if (bullet_) {
 		w += bulletOffset;
 	}
@@ -1122,12 +1128,8 @@ void TextView::Draw(UIContext &dc) {
 		style.background.color &= 0x7fffffff;
 		dc.FillRect(style.background, bounds_);
 	}
-	const FontStyle *style = &dc.GetTheme().uiFont;
-	if (small_) {
-		style = &dc.GetTheme().uiFontSmall;
-	} else if (big_) {
-		style = &dc.GetTheme().uiFontBig;
-	}
+
+	const FontStyle *style = GetTextStyle(dc, textSize_);
 	dc.SetFontStyle(*style);
 
 	Bounds textBounds = bounds_;
@@ -1145,10 +1147,10 @@ void TextView::Draw(UIContext &dc) {
 
 	if (shadow_) {
 		uint32_t shadowColor = 0x80000000;
-		dc.DrawTextRect(text_, textBounds.Offset(1.0f + pad_, 1.0f + pad_), shadowColor, textAlign_);
+		dc.DrawTextRect(text_, textBounds.Offset(1.0f + pad_.left, 1.0f + pad_.top), shadowColor, textAlign_);
 	}
-	dc.DrawTextRect(text_, textBounds.Offset(pad_, pad_), textColor, textAlign_);
-	if (small_ || big_) {
+	dc.DrawTextRect(text_, textBounds.Offset(pad_.left, pad_.top), textColor, textAlign_);
+	if (textSize_ != TextSize::Normal) {
 		// If we changed font style, reset it.
 		dc.SetFontStyle(dc.GetTheme().uiFont);
 	}

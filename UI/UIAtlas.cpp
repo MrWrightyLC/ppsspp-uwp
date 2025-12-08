@@ -21,6 +21,7 @@
 #include "ext/nanosvg/src/nanosvgrast.h"
 
 constexpr bool SAVE_DEBUG_IMAGES = false;
+constexpr bool SAVE_DEBUG_ATLAS = false;
 
 static Atlas ui_atlas;
 static Atlas font_atlas;
@@ -79,6 +80,7 @@ static const ImageMeta imageIDs[] = {
 	{"I_UP_DIRECTORY", false},
 	{"I_GEAR", false},
 	{"I_GEAR_SMALL", true},
+	{"I_GEAR_STAR", false},
 	{"I_1", true},
 	{"I_2", true},
 	{"I_3", true},
@@ -116,11 +118,13 @@ static const ImageMeta imageIDs[] = {
 	{"I_THREE_DOTS", true},
 	{"I_INFO", false},
 	{"I_RETROACHIEVEMENTS_LOGO", false},
+	{"I_ACHIEVEMENT", false},
 	{"I_CHECKMARK", false},
 	{"I_PLAY", false},
 	{"I_STOP", false},
 	{"I_PAUSE", false},
 	{"I_FAST_FORWARD", false},
+	{"I_FAST_FORWARD_LINE", false},
 	{"I_RECORD", false},
 	{"I_SPEAKER", false},
 	{"I_SPEAKER_MAX", false},
@@ -159,6 +163,14 @@ static const ImageMeta imageIDs[] = {
 	{"I_CHAT", false},
 	{"I_UMD", false},
 	{"I_EXIT", false},
+	{"I_CHEAT", false},
+	{"I_HAMBURGER", false},
+	{"I_DEVICE_ROTATION_LANDSCAPE_REV", false},
+	{"I_DEVICE_ROTATION_AUTO", false},
+	{"I_DEVICE_ROTATION_LANDSCAPE", false},
+	{"I_DEVICE_ROTATION_PORTRAIT", false},
+	{"I_MOVE", false},
+	{"I_RESIZE", false},
 };
 
 static std::string PNGNameFromID(std::string_view id) {
@@ -186,6 +198,12 @@ static bool IsImageID(std::string_view id) {
 
 static bool GenerateUIAtlasImage(Atlas *atlas, float dpiScale, Image *dest, int maxTextureSize) {
 	Bucket bucket;
+
+#ifdef _DEBUG
+	for (int i = 0; i < ARRAY_SIZE(imageIDs); i++) {
+		_dbg_assert_(imageIDs[i].id.size() < 32);
+	}
+#endif
 
 	// Script fully read, now read images and rasterize the fonts.
 	std::vector<Image> images(ARRAY_SIZE(imageIDs));
@@ -308,7 +326,7 @@ static bool GenerateUIAtlasImage(Atlas *atlas, float dpiScale, Image *dest, int 
 
 			shapeCount = (int)usedShapes.size();
 
-			if (SAVE_DEBUG_IMAGES) {
+			if (SAVE_DEBUG_ATLAS) {
 				WARN_LOG(Log::G3D, "Writing debug image buttons_rasterized.png");
 				pngSave(Path("../buttons_rasterized.png"), svgImg, svgWidth, svgHeight, 4);
 			}
@@ -411,7 +429,7 @@ static bool GenerateUIAtlasImage(Atlas *atlas, float dpiScale, Image *dest, int 
 	atlas->num_images = (int)genAtlasImages.size();
 
 	// For debug, write out the atlas.
-	if (SAVE_DEBUG_IMAGES) {
+	if (SAVE_DEBUG_ATLAS) {
 		WARN_LOG(Log::G3D, "Writing debug image ui_atlas_gen.png");
 		dest->SavePNG("../ui_atlas_gen.png");
 	}

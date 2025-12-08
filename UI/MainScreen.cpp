@@ -66,7 +66,6 @@
 #include "UI/InstallZipScreen.h"
 #include "Core/Config.h"
 #include "Core/Loaders.h"
-#include "GPU/GPUCommon.h"
 #include "Common/Data/Text/I18n.h"
 
 #if PPSSPP_PLATFORM(IOS) || PPSSPP_PLATFORM(MAC)
@@ -520,10 +519,11 @@ GameBrowser::GameBrowser(int token, const Path &path, BrowseFlags browseFlags, b
 	using namespace UI;
 	path_.SetUserAgent(StringFromFormat("PPSSPP/%s", PPSSPP_GIT_VERSION));
 	Path memstickRoot = GetSysDirectory(DIRECTORY_MEMSTICK_ROOT);
+	aliasMatch_ = memstickRoot;
 	if (memstickRoot == GetSysDirectory(DIRECTORY_PSP)) {
-		path_.SetRootAlias("ms:/PSP/", memstickRoot);
+		aliasDisplay_ = "ms:/PSP/";
 	} else {
-		path_.SetRootAlias("ms:/", memstickRoot);
+		aliasDisplay_ = "ms:/";
 	}
 	if (System_GetPropertyBool(SYSPROP_LIMITED_FILE_BROWSING) &&
 		(path.Type() == PathType::NATIVE || path.Type() == PathType::CONTENT_URI)) {
@@ -783,13 +783,15 @@ void GameBrowser::Refresh() {
 
 		const bool pathOnSeparateLine = g_display.dp_xres < 1050 || portrait_;
 
+		std::string pathStr = GetFriendlyPath(path_.GetPath(), aliasMatch_, aliasDisplay_);
+
 		if (pathOnSeparateLine) {
-			Add(new TextView(path_.GetFriendlyPath(), ALIGN_VCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 0))));
+			Add(new TextView(pathStr, ALIGN_VCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 0))));
 		}
 		if (browseFlags_ & BrowseFlags::NAVIGATE) {
 			if (!pathOnSeparateLine) {
 				topBar->Add(new Spacer(2.0f));
-				topBar->Add(new TextView(path_.GetFriendlyPath(), ALIGN_VCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, 64.0f, 1.0f)));
+				topBar->Add(new TextView(pathStr, ALIGN_VCENTER | FLAG_WRAP_TEXT, true, new LinearLayoutParams(FILL_PARENT, 64.0f, 1.0f)));
 			}
 			topBar->Add(new Choice(ImageID("I_HOME"), new LayoutParams(WRAP_CONTENT, 64.0f)))->OnClick.Handle(this, &GameBrowser::OnHomeClick);
 			if (System_GetPropertyBool(SYSPROP_HAS_ADDITIONAL_STORAGE)) {
@@ -1204,7 +1206,7 @@ void MainScreen::CreateMainButtons(UI::ViewGroup *parent, bool portrait) {
 		gold->OnClick.Add([this](UI::EventParams &) {
 			LaunchBuyGold(this->screenManager());
 		});
-		gold->SetIcon(ImageID("I_ICON_GOLD"), 0.5f);
+		gold->SetIconRight(ImageID("I_ICON_GOLD"), 0.5f);
 		gold->SetImageScale(0.6f);  // for the left-icon in case of vertical.
 		gold->SetShine(true);
 	}
@@ -1542,12 +1544,12 @@ void MainScreen::OnCredits(UI::EventParams &e) {
 
 void LaunchBuyGold(ScreenManager *screenManager) {
 	if (System_GetPropertyBool(SYSPROP_USE_IAP)) {
-		screenManager->push(new IAPScreen());
+		screenManager->push(new IAPScreen(true));
+	} else if (System_GetPropertyBool(SYSPROP_USE_APP_STORE)) {
+		screenManager->push(new IAPScreen(false));
 	} else {
 #if PPSSPP_PLATFORM(IOS_APP_STORE)
 		System_LaunchUrl(LaunchUrlType::BROWSER_URL, "https://www.ppsspp.org/buygold_ios");
-#elif PPSSPP_PLATFORM(ANDROID)
-		System_LaunchUrl(LaunchUrlType::BROWSER_URL, "market://details?id=org.ppsspp.ppssppgold");
 #else
 		System_LaunchUrl(LaunchUrlType::BROWSER_URL, "https://www.ppsspp.org/buygold");
 #endif

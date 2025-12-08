@@ -706,10 +706,10 @@ public:
 class Choice : public ClickableItem {
 public:
 	Choice(std::string_view text, LayoutParams *layoutParams = nullptr)
-		: Choice(text, "", false, layoutParams) { }
+		: ClickableItem(layoutParams), text_(text) { }
 	Choice(std::string_view text, ImageID image, LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), text_(text), image_(image) {}
-	Choice(std::string_view text, std::string_view smallText, bool selected = false, LayoutParams *layoutParams = nullptr)
+	Choice(std::string_view text, std::string_view smallText, LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), text_(text), smallText_(smallText), image_(ImageID::invalid()) {}
 	Choice(ImageID image, LayoutParams *layoutParams = nullptr)
 		: ClickableItem(layoutParams), image_(image), rightIconImage_(ImageID::invalid()) {}
@@ -725,7 +725,10 @@ public:
 	void SetDrawTextFlags(u32 flags) {
 		drawTextFlags_ = flags;
 	}
-	void SetIcon(ImageID iconImage, float scale = 1.0f, float rot = 0.0f, bool flipH = false, bool keepColor = true) {
+	void SetIconLeft(ImageID iconImage) {
+		image_ = iconImage;
+	}
+	void SetIconRight(ImageID iconImage, float scale = 1.0f, float rot = 0.0f, bool flipH = false, bool keepColor = true) {
 		rightIconKeepColor_ = keepColor;
 		rightIconScale_ = scale;
 		rightIconRot_ = rot;
@@ -776,7 +779,7 @@ private:
 class StickyChoice : public Choice {
 public:
 	StickyChoice(std::string_view text, std::string_view smallText = "", LayoutParams *layoutParams = nullptr)
-		: Choice(text, smallText, false, layoutParams) {}
+		: Choice(text, smallText, layoutParams) {}
 	StickyChoice(ImageID buttonImage, LayoutParams *layoutParams = nullptr)
 		: Choice(buttonImage, layoutParams) {}
 	StickyChoice(std::string_view text, ImageID image, LayoutParams *layoutParams = nullptr)
@@ -835,8 +838,10 @@ public:
 	void SetPasswordDisplay() {
 		passwordMasking_ = true;
 	}
+
 protected:
 	virtual std::string ValueText() const = 0;
+	virtual ImageID ValueImage() const { return ImageID::invalid(); }
 
 	float CalculateValueScale(const UIContext &dc, std::string_view valueText, float availWidth) const;
 
@@ -1001,19 +1006,26 @@ public:
 	void Draw(UIContext &dc) override;
 
 private:
-	FontStyle ComputeStyle(const UIContext &dc) const;
+	const FontStyle *ComputeStyle(const UIContext &dc) const;
 	std::string text_;
 	bool small_ = false;
 	bool big_ = false;
 };
 
+enum class TextSize {
+	Tiny,
+	Small,
+	Normal,
+	Big,
+};
+
 class TextView : public InertView {
 public:
 	TextView(std::string_view text, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF), small_(false) {}
+		: InertView(layoutParams), text_(text), textAlign_(0), textColor_(0xFFFFFFFF) {}
 
 	TextView(std::string_view text, int textAlign, bool small, LayoutParams *layoutParams = 0)
-		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), small_(small) {}
+		: InertView(layoutParams), text_(text), textAlign_(textAlign), textColor_(0xFFFFFFFF), textSize_(small ? TextSize::Small : TextSize::Normal) {}
 
 	void GetContentDimensionsBySpec(const UIContext &dc, MeasureSpec horiz, MeasureSpec vert, float &w, float &h) const override;
 	void Draw(UIContext &dc) override;
@@ -1021,30 +1033,32 @@ public:
 	void SetText(std::string_view text) { text_ = text; }
 	const std::string &GetText() const { return text_; }
 	std::string DescribeText() const override { return GetText(); }
-	void SetSmall(bool small) { small_ = small; }
-	void SetBig(bool big) { big_ = big; }
+	void SetSmall(bool small) { textSize_ = TextSize::Small; }
+	void SetBig(bool big) { textSize_ = TextSize::Big; }
+	void SetTextSize(TextSize size) { textSize_ = size; }
 	void SetTextColor(uint32_t color) { textColor_ = color; hasTextColor_ = true; }
 	void SetShadow(bool shadow) { shadow_ = shadow; }
 	void SetFocusable(bool focusable) { focusable_ = focusable; }
 	void SetClip(bool clip) { clip_ = clip; }
 	void SetBullet(bool bullet) { bullet_ = bullet; }
-	void SetPadding(float pad) { pad_ = pad; }
+	void SetPadding(Margins padding) { pad_ = padding; }
 	void SetAlign(int align) { textAlign_ = align; }
 
 	bool CanBeFocused() const override { return focusable_; }
 
 private:
+	static const FontStyle *GetTextStyle(const UIContext &dc, TextSize size);
+
 	std::string text_;
 	int textAlign_;
 	uint32_t textColor_;
 	bool hasTextColor_ = false;
-	bool small_ = false;
-	bool big_ = false;
+	TextSize textSize_ = TextSize::Normal;
 	bool shadow_ = false;
 	bool focusable_ = false;
 	bool clip_ = true;
 	bool bullet_ = false;
-	float pad_ = 0.0f;
+	Margins pad_{};
 };
 
 // Quick hack for clickable version number
@@ -1164,6 +1178,7 @@ private:
 };
 
 void MeasureBySpec(Size sz, float contentWidth, MeasureSpec spec, float *measured);
+void ApplyBoundBySpec(float &bound, MeasureSpec spec);
 void ApplyBoundsBySpec(Bounds &bounds, MeasureSpec horiz, MeasureSpec vert);
 
 bool IsDPadKey(const KeyInput &key);
